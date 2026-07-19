@@ -122,6 +122,7 @@ async function getTodaySummary(
           _id: s._id.toString(),
           name: s.name,
           classId: cid,
+          className: classMap.get(cid) || null,
           sex: s.sex,
         });
       }

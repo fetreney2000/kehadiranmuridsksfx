@@ -85,14 +85,9 @@ export default function DashboardPage() {
       cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] || row.original.sex,
     },
     {
-      accessorKey: "classId",
+      accessorKey: "className",
       header: MS.students.class,
-      cell: ({ row }) => {
-        const cls = data?.perClass.find(
-          (c) => c.classId === row.original.classId
-        );
-        return cls?.className || row.original.classId;
-      },
+      cell: ({ row }) => row.original.className || row.original.classId || "—",
     },
   ];
 

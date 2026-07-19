@@ -1,13 +1,16 @@
 /**
  * GET /api/students — list students (filterable by classId)
  * POST /api/students — create student (pentadbir or guru_kelas for own class)
+ *
+ * GET response now includes `className` resolved from the classes collection
+ * so the frontend never needs to display raw classId.
  */
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/mongodb";
-import { requireAuth, requireRole } from "@/lib/api/auth-helpers";
+import { requireAuth } from "@/lib/api/auth-helpers";
 import { canManageStudent } from "@/lib/auth/permissions";
-import type { Student } from "@/lib/db/types";
+import type { Student, Class } from "@/lib/db/types";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 
@@ -44,11 +47,38 @@ export async function GET(request: Request) {
     .sort({ name: 1 })
     .toArray();
 
+  // Resolve class names in a single query — one round-trip, not N queries
+  const classIds = [
+    ...new Set(
+      students
+        .map((s) => s.classId?.toString())
+        .filter((id): id is string => !!id)
+    ),
+  ];
+
+  const classDocs =
+    classIds.length > 0
+      ? await db
+          .collection<Class>("classes")
+          .find({
+            _id: {
+              $in: classIds.map((id) => id),
+            },
+          } as any)
+          .project({ _id: 1, name: 1 })
+          .toArray()
+      : [];
+
+  const classMap = new Map(
+    classDocs.map((c) => [c._id.toString(), c.name])
+  );
+
   const result = students.map((s) => ({
     _id: s._id.toString(),
     name: s.name,
     sex: s.sex,
     classId: s.classId?.toString() || null,
+    className: classMap.get(s.classId?.toString() || "") || null,
     qrCode: s.qrCode,
     isActive: s.isActive,
     createdAt: s.createdAt.toISOString(),
@@ -78,6 +108,11 @@ export async function POST(request: Request) {
   const now = new Date();
   const qrCode = uuidv4();
 
+  // Resolve class name for the response
+  const classDoc = await db
+    .collection<Class>("classes")
+    .findOne({ _id: classId as any } as any);
+
   const result = await db.collection<Student>("students").insertOne({
     name,
     sex,
@@ -94,6 +129,7 @@ export async function POST(request: Request) {
       name,
       sex,
       classId,
+      className: classDoc?.name || null,
       qrCode,
       isActive: true,
       createdAt: now.toISOString(),

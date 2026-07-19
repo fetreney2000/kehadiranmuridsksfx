@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,7 +20,7 @@ import { toast } from "sonner";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 
 interface StudentData {
-  _id: string; name: string; sex: "L" | "P"; classId: string; qrCode: string; isActive: boolean;
+  _id: string; name: string; sex: "L" | "P"; classId: string; className: string | null; qrCode: string; isActive: boolean;
 }
 interface ClassData {
   _id: string; name: string;
@@ -38,10 +37,20 @@ export default function MuridPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<StudentData | null>(null);
 
-  const { data: students, isLoading } = useQuery<StudentData[]>({ queryKey: ["students"], queryFn: () => fetch("/api/students?active=true").then(r => r.json()) });
-  const { data: classes } = useQuery<ClassData[]>({ queryKey: ["classes"], queryFn: () => fetch("/api/classes").then(r => r.json()) });
+  const { data: students, isLoading } = useQuery<StudentData[]>({
+    queryKey: ["students"],
+    staleTime: 2 * 60 * 1000,
+    queryFn: () => fetch("/api/students?active=true").then(r => r.json()),
+  });
+  const { data: classes } = useQuery<ClassData[]>({
+    queryKey: ["classes"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: () => fetch("/api/classes").then(r => r.json()),
+  });
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({ resolver: zodResolver(studentSchema), defaultValues: { name: "", sex: "L" as const, classId: "" } });
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
+    resolver: zodResolver(studentSchema), defaultValues: { name: "", sex: "L" as const, classId: "" },
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: any) => fetch("/api/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
@@ -66,19 +75,19 @@ export default function MuridPage() {
     else createMutation.mutate(data);
   };
 
-  const getClassName = (classId: string) => classes?.find(c => c._id === classId)?.name || classId;
-
   const columns: ColumnDef<StudentData>[] = [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex] },
-    { accessorKey: "classId", header: MS.students.class, cell: ({ row }) => getClassName(row.original.classId ?? "") },
+    { accessorKey: "className", header: MS.students.class, cell: ({ row }) => row.original.className || row.original.classId || "—" },
     { accessorKey: "qrCode", header: MS.students.qrCode, cell: ({ row }) => <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{row.original.qrCode.substring(0, 8)}...</code> },
-    { id: "actions", header: "", cell: ({ row }) => (
-      <div className="flex items-center gap-2 justify-end">
-        <Button variant="ghost" size="icon" onClick={() => { setEditing(row.original); reset({ name: row.original.name, sex: row.original.sex, classId: row.original.classId }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" onClick={() => { if (confirm(MS.students.deleteConfirm)) deleteMutation.mutate(row.original._id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-      </div>
-    )},
+    {
+      id: "actions", header: "", cell: ({ row }) => (
+        <div className="flex items-center gap-2 justify-end">
+          <Button variant="ghost" size="icon" onClick={() => { setEditing(row.original); reset({ name: row.original.name, sex: row.original.sex, classId: row.original.classId }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" onClick={() => { if (confirm(MS.students.deleteConfirm)) deleteMutation.mutate(row.original._id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+        </div>
+      ),
+    },
   ];
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64" /></div>;
@@ -99,18 +108,13 @@ export default function MuridPage() {
             <div><Label>{MS.students.sex}</Label>
               <Select value={watch("sex") || "L"} onValueChange={(v) => setValue("sex", v as "L" | "P")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="L">{MS.sex.L}</SelectItem>
-                  <SelectItem value="P">{MS.sex.P}</SelectItem>
-                </SelectContent>
+                <SelectContent><SelectItem value="L">{MS.sex.L}</SelectItem><SelectItem value="P">{MS.sex.P}</SelectItem></SelectContent>
               </Select>
             </div>
             <div><Label>{MS.students.class}</Label>
               <Select value={watch("classId") || ""} onValueChange={(v) => setValue("classId", v ?? "")}>
                 <SelectTrigger><SelectValue placeholder={MS.students.class} /></SelectTrigger>
-                <SelectContent>
-                  {classes?.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}
-                </SelectContent>
+                <SelectContent>{classes?.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
               {errors.classId && <p className="text-xs text-destructive mt-1">{errors.classId.message}</p>}
             </div>
