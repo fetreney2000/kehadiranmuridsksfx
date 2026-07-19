@@ -38,7 +38,6 @@ export default function KehadiranPage() {
   const [isStarting, setIsStarting] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerDivId = "qr-scanner";
-  const scannerInitialized = useRef(false);
 
   const today = getTodayKL();
 
@@ -86,24 +85,17 @@ export default function KehadiranPage() {
     setCameraError("");
     setIsStarting(true);
     try {
-      // Stop any existing instance first
       if (scannerRef.current) {
         try { await scannerRef.current.stop(); } catch {}
         scannerRef.current = null;
       }
 
-      const scanner = new Html5Qrcode(scannerDivId, {
-        verbose: false,
-      });
+      const scanner = new Html5Qrcode(scannerDivId, { verbose: false });
       scannerRef.current = scanner;
 
       await scanner.start(
         { facingMode: "environment" },
-        {
-          fps: 5,
-          qrbox: { width: 200, height: 200 },
-          aspectRatio: 1,
-        },
+        { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
         (decodedText) => {
           const student = students?.find(s => s.qrCode === decodedText);
           if (student) {
@@ -120,9 +112,7 @@ export default function KehadiranPage() {
             setTimeout(() => setScannedName(""), 2500);
           }
         },
-        (errMsg) => {
-          // Silently ignore individual scan frame errors
-        }
+        () => {}
       );
       setScannerRunning(true);
       setIsStarting(false);
@@ -142,31 +132,23 @@ export default function KehadiranPage() {
 
   const stopScanner = useCallback(async () => {
     if (scannerRef.current) {
-      try {
-        await scannerRef.current.stop();
-        await scannerRef.current.clear();
-      } catch {}
+      try { await scannerRef.current.stop(); } catch {}
+      try { await scannerRef.current.clear(); } catch {}
       scannerRef.current = null;
     }
     setScannerRunning(false);
     setIsStarting(false);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       const s = scannerRef.current;
-      if (s) {
-        Promise.resolve(s.stop()).catch(() => {});
-        Promise.resolve(s.clear()).catch(() => {});
-      }
+      if (s) { Promise.resolve(s.stop()).catch(() => {}); }
     };
   }, []);
 
   const handleModeSwitch = (newMode: "scan" | "toggle") => {
-    if (newMode === "toggle") {
-      stopScanner();
-    }
+    if (newMode === "toggle") stopScanner();
     setMode(newMode);
   };
 
@@ -178,44 +160,17 @@ export default function KehadiranPage() {
 
   const toggleColumns: ColumnDef<StudentItem>[] = [
     { accessorKey: "name", header: MS.students.name },
-    {
-      accessorKey: "sex",
-      header: MS.students.sex,
-      cell: ({ row }) => {
-        const s = row.original.sex as "L" | "P";
-        return MS.sex[s];
-      },
-    },
-    {
-      id: "status",
-      header: MS.status.active,
-      cell: ({ row }) => {
-        const present = isPresent(row.original._id);
-        return (
-          <Badge variant={present ? "default" : "secondary"}>
-            {present ? <Check className="h-3 w-3 mr-1" /> : <X className="h-3 w-3 mr-1" />}
-            {present ? MS.status.present : MS.status.absent}
-          </Badge>
-        );
-      },
-    },
-    {
-      id: "toggle",
-      header: "",
-      cell: ({ row }) => {
-        const present = isPresent(row.original._id);
-        return (
-          <Switch
-            checked={present}
-            onCheckedChange={() => { if (!present) markMutation.mutate([row.original._id]); }}
-            disabled={present || markMutation.isPending}
-          />
-        );
-      },
-    },
+    { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
+    { id: "status", header: MS.status.active, cell: ({ row }) => {
+      const present = isPresent(row.original._id);
+      return <Badge variant={present ? "default" : "secondary"}>{present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}</Badge>;
+    }},
+    { id: "toggle", header: "", cell: ({ row }) => {
+      const present = isPresent(row.original._id);
+      return <Switch checked={present} onCheckedChange={() => { if (!present) markMutation.mutate([row.original._id]); }} disabled={present || markMutation.isPending} />;
+    }},
   ];
 
-  // Compute summary counts
   const totalStudents = students?.length || 0;
   const presentCount = alreadyMarked.current.size + markedIds.size;
   const absentCount = totalStudents - presentCount;
@@ -227,7 +182,6 @@ export default function KehadiranPage() {
         <p className="text-muted-foreground text-sm">{MS.attendance.today}: {today}</p>
       </div>
 
-      {/* Class picker */}
       <Card>
         <CardContent className="p-4">
           <Label>{MS.students.class}</Label>
@@ -246,7 +200,6 @@ export default function KehadiranPage() {
 
       {selectedClass && (
         <>
-          {/* Mode toggle */}
           <div className="flex items-center gap-4 flex-wrap">
             <Button variant={mode === "toggle" ? "default" : "outline"} onClick={() => handleModeSwitch("toggle")}>
               <Users className="h-4 w-4 mr-2" />{MS.attendance.toggleMode}
@@ -256,7 +209,6 @@ export default function KehadiranPage() {
             </Button>
           </div>
 
-          {/* Scan mode */}
           {mode === "scan" && (
             <Card>
               <CardHeader>
@@ -264,61 +216,38 @@ export default function KehadiranPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {cameraError && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{cameraError}</AlertDescription>
-                  </Alert>
+                  <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{cameraError}</AlertDescription></Alert>
                 )}
 
-                {!scannerRunning ? (
+                {/* Scanner div — ALWAYS in DOM, hidden when not running */}
+                <div id={scannerDivId} className={scannerRunning ? "w-full max-w-sm mx-auto rounded-lg overflow-hidden" : "hidden"} />
+
+                {scannedName && scannerRunning && (
+                  <motion.p key={scannedName} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-center font-medium text-green-600">
+                    {scannedName}
+                  </motion.p>
+                )}
+
+                {!scannerRunning && (
                   <div className="text-center py-6">
                     <Camera className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Klik butang di bawah untuk memulakan pengimbas. Pelayar anda akan meminta kebenaran kamera.
-                    </p>
+                    <p className="text-sm text-muted-foreground mb-4">Klik butang di bawah untuk memulakan pengimbas. Pelayar anda akan meminta kebenaran kamera.</p>
                     <Button onClick={startScanner} disabled={isStarting} size="lg">
-                      {isStarting ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Memulakan kamera...
-                        </>
-                      ) : (
-                        <>
-                          <Camera className="h-4 w-4 mr-2" />
-                          Mulakan Imbasan
-                        </>
-                      )}
+                      {isStarting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Memulakan kamera...</> : <><Camera className="h-4 w-4 mr-2" />Mulakan Imbasan</>}
                     </Button>
                   </div>
-                ) : (
-                  <>
-                    <div className="flex items-center gap-2 mb-3">
-                      <Badge variant="default" className="animate-pulse">
-                        <Camera className="h-3 w-3 mr-1" /> Sedang Mengimbas
-                      </Badge>
-                      <Button variant="outline" size="sm" onClick={stopScanner}>
-                        <RefreshCw className="h-3 w-3 mr-1" /> Hentikan
-                      </Button>
-                    </div>
-                    <div id={scannerDivId} className="w-full max-w-sm mx-auto rounded-lg overflow-hidden" />
-                    {scannedName && (
-                      <motion.p
-                        key={scannedName}
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0 }}
-                        className="text-center mt-3 font-medium text-green-600"
-                      >
-                        {scannedName}
-                      </motion.p>
-                    )}
-                  </>
+                )}
+
+                {scannerRunning && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default" className="animate-pulse"><Camera className="h-3 w-3 mr-1" /> Sedang Mengimbas</Badge>
+                    <Button variant="outline" size="sm" onClick={stopScanner}><RefreshCw className="h-3 w-3 mr-1" /> Hentikan</Button>
+                  </div>
                 )}
               </CardContent>
             </Card>
           )}
 
-          {/* Toggle mode */}
           {mode === "toggle" && (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -328,14 +257,11 @@ export default function KehadiranPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                {isLoading ? <Skeleton className="h-64" /> : (
-                  <DataTable columns={toggleColumns} data={students || []} />
-                )}
+                {isLoading ? <Skeleton className="h-64" /> : <DataTable columns={toggleColumns} data={students || []} />}
               </CardContent>
             </Card>
           )}
 
-          {/* Summary */}
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-4 text-sm flex-wrap">

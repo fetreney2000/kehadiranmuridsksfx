@@ -39,6 +39,7 @@ interface TodayReport {
     _id: string;
     name: string;
     classId: string;
+    className: string | null;
     sex: string;
   }[];
 }
