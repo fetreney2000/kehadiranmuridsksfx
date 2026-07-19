@@ -38,7 +38,7 @@ export default function KelasPage() {
   const [editing, setEditing] = useState<ClassData | null>(null);
 
   const { data: classes, isLoading } = useQuery<ClassData[]>({ queryKey: ["classes"], staleTime: 5 * 60 * 1000, queryFn: () => fetch("/api/classes").then(r => r.json()) });
-  const { data: teachers } = useQuery<Teacher[]>({ queryKey: ["users"], queryFn: () => fetch("/api/users").then(r => r.json()), select: (d: any[]) => d.filter(u => u.role === "guru_kelas" && u.isActive), staleTime: 5 * 60 * 1000 });
+  const { data: teachers } = useQuery<Teacher[]>({ queryKey: ["users"], queryFn: () => fetch("/api/users").then(r => r.json()), select: (d: any[]) => d.filter(u => u.isActive && (u.role === "guru_kelas" || (u.roles && u.roles.includes("guru_kelas")))), staleTime: 5 * 60 * 1000 });
 
   const teacherMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -104,7 +104,7 @@ export default function KelasPage() {
               <Select value={selectedTeacherId || ""} onValueChange={(v) => setValue("guruKelasId", v ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder={MS.classes.noTeacher}>
-                    {selectedTeacherId ? (teacherMap.get(selectedTeacherId) || selectedTeacherId) : MS.classes.noTeacher}
+                    {selectedTeacherId && selectedTeacherId !== "__none__" ? (teacherMap.get(selectedTeacherId) || selectedTeacherId) : null}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
