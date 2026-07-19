@@ -76,6 +76,13 @@ export default function PenggunaPage() {
         if (prev.length <= 1) return prev; // must have at least 1
         return prev.filter(r => r !== role);
       }
+      // Block mutually exclusive roles: guru_kelas and guru_biasa cannot coexist
+      if (role === "guru_kelas" && prev.includes("guru_biasa")) {
+        prev = prev.filter(r => r !== "guru_biasa");
+      }
+      if (role === "guru_biasa" && prev.includes("guru_kelas")) {
+        prev = prev.filter(r => r !== "guru_kelas");
+      }
       return [...prev, role];
     });
   };
@@ -159,7 +166,11 @@ export default function PenggunaPage() {
               <div className="flex flex-wrap gap-4 mt-2">
                 {ALL_ROLES.map(role => (
                   <label key={role} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox checked={selectedRoles.includes(role)} onCheckedChange={() => toggleRole(role)} disabled={selectedRoles.length === 1 && selectedRoles.includes(role)} />
+                  <Checkbox checked={selectedRoles.includes(role)} onCheckedChange={() => toggleRole(role)} disabled={
+                    (selectedRoles.length === 1 && selectedRoles.includes(role)) ||
+                    (role === "guru_biasa" && selectedRoles.includes("guru_kelas")) ||
+                    (role === "guru_kelas" && selectedRoles.includes("guru_biasa"))
+                  } />
                     <span className="text-sm">{MS.role[role]}</span>
                   </label>
                 ))}
