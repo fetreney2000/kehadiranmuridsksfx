@@ -25,7 +25,7 @@ interface ClassItem { _id: string; name: string; }
 
 const userSchema = z.object({
   username: z.string().min(3, "Min 3 aksara"),
-  password: z.string().min(6, MS.users.passwordMinLength),
+  password: z.string().min(6, MS.users.passwordMinLength).optional().or(z.literal("")),
   fullName: z.string().min(1),
   role: z.enum(["pentadbir", "guru_kelas", "guru_biasa"]),
   classId: z.string().optional(),
