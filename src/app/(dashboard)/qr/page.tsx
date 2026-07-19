@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MS } from "@/lib/strings/ms";
@@ -13,7 +13,7 @@ import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
 
 interface StudentData {
-  _id: string; name: string; sex: string; classId: string; qrCode: string;
+  _id: string; name: string; sex: string; classId: string; className: string | null; qrCode: string;
 }
 interface ClassData {
   _id: string; name: string;
@@ -23,12 +23,16 @@ export default function QRPage() {
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const printRef = useRef<HTMLDivElement>(null);
 
-  const { data: classes } = useQuery<ClassData[]>({ queryKey: ["classes"], queryFn: () => fetch("/api/classes").then(r => r.json()) });
-  const { data: students } = useQuery<StudentData[]>({ queryKey: ["students"], queryFn: () => fetch("/api/students?active=true").then(r => r.json()) });
+  const { data: classes } = useQuery<ClassData[]>({ queryKey: ["classes"], staleTime: 5 * 60 * 1000, queryFn: () => fetch("/api/classes").then(r => r.json()) });
+  const { data: students } = useQuery<StudentData[]>({ queryKey: ["students"], staleTime: 2 * 60 * 1000, queryFn: () => fetch("/api/students?active=true").then(r => r.json()) });
 
   const filtered = selectedClass === "all" ? students : students?.filter(s => s.classId === selectedClass);
 
-  const getClassName = (id: string) => classes?.find(c => c._id === id)?.name || id;
+  const classMap = useMemo(() => {
+    const m = new Map<string, string>();
+    classes?.forEach(c => m.set(c._id, c.name));
+    return m;
+  }, [classes]);
 
   const generateQRCanvas = async (code: string, size: number = 120): Promise<string> => {
     return QRCode.toDataURL(code, { width: size, margin: 1, color: { dark: "#000", light: "#fff" } });
@@ -48,11 +52,8 @@ export default function QRPage() {
   const handlePDF = async () => {
     if (!filtered?.length) return;
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const cardW = 60, cardH = 40, marginX = 10, marginY = 10, gap = 5;
     const perRow = 3;
-    const cardW = 60, cardH = 40;
-    const marginX = 10, marginY = 10;
-    const gap = 5;
-
     for (let i = 0; i < filtered.length; i++) {
       if (i > 0 && i % 6 === 0) doc.addPage();
       const pageIdx = i % 6;
@@ -64,7 +65,7 @@ export default function QRPage() {
       const qrDataUrl = await generateQRCanvas(s.qrCode, 80);
       doc.setFontSize(7);
       doc.text(s.name, x, y);
-      doc.text(getClassName(s.classId), x, y + 4);
+      doc.text(s.className || classMap.get(s.classId) || s.classId, x, y + 4);
       doc.addImage(qrDataUrl, "PNG", x + 5, y + 8, 20, 20);
     }
     doc.save("kod-qr-murid.pdf");
@@ -81,9 +82,13 @@ export default function QRPage() {
       </div>
 
       <Card>
-        <CardContent className="p-4 pt-4">
-          <Select value={selectedClass || "all"} onValueChange={(v) => setSelectedClass(v ?? "all")}>
-            <SelectTrigger className="w-64"><SelectValue placeholder={MS.reports.allClasses} /></SelectTrigger>
+        <CardContent className="p-4">
+          <Select value={selectedClass} onValueChange={(v) => setSelectedClass(v ?? "all")}>
+            <SelectTrigger className="w-64">
+              <SelectValue>
+                {selectedClass === "all" ? MS.reports.allClasses : (classMap.get(selectedClass) || selectedClass)}
+              </SelectValue>
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">{MS.reports.allClasses}</SelectItem>
               {classes?.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}
@@ -95,7 +100,7 @@ export default function QRPage() {
       <div ref={printRef}>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 print:grid-cols-3 print:gap-2">
           {filtered?.map(s => (
-            <QRCard key={s._id} student={s} className={getClassName(s.classId)} loadQR={loadQR} cache={qrCache} />
+            <QRCard key={s._id} student={s} className={s.className || classMap.get(s.classId) || s.classId} loadQR={loadQR} cache={qrCache} />
           ))}
         </div>
       </div>
@@ -109,12 +114,7 @@ function QRCard({ student, className, loadQR, cache }: {
   student: StudentData; className: string; loadQR: (code: string) => Promise<string>; cache: Record<string, string>;
 }) {
   const [loaded, setLoaded] = useState(!!cache[student.qrCode]);
-
-  if (!loaded) {
-    loadQR(student.qrCode).then(() => setLoaded(true));
-    return <Skeleton className="h-40" />;
-  }
-
+  if (!loaded) { loadQR(student.qrCode).then(() => setLoaded(true)); return <Skeleton className="h-40" />; }
   return (
     <Card className="text-center print:border print:shadow-none">
       <CardContent className="p-3 print:p-2">

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,12 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable } from "@/components/data-table";
 import { MS } from "@/lib/strings/ms";
-import { getTodayKL, formatDateMalay } from "@/lib/utils/date";
-import { FileSpreadsheet, FileText, Download, Calendar } from "lucide-react";
+import { getTodayKL } from "@/lib/utils/date";
+import { FileSpreadsheet, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { exportToExcel } from "@/lib/export/excel";
 import { exportToPDF } from "@/lib/export/pdf";
@@ -24,15 +23,33 @@ interface ClassItem {
   _id: string; name: string;
 }
 
+const REPORT_TYPE_LABELS: Record<string, string> = {
+  daily: MS.reports.dailyReport,
+  weekly: MS.reports.weeklyReport,
+  monthly: MS.reports.monthlyReport,
+  yearly: MS.reports.yearlyReport,
+  custom: MS.reports.customRange,
+};
+
 export default function LaporanPage() {
-  const [type, setType] = useState<"daily" | "weekly" | "monthly" | "yearly" | "custom">("daily");
+  const [type, setType] = useState<string>("daily");
   const [classId, setClassId] = useState<string>("all");
   const [customFrom, setCustomFrom] = useState(getTodayKL());
   const [customTo, setCustomTo] = useState(getTodayKL());
 
-  const { data: classes } = useQuery<ClassItem[]>({ queryKey: ["classes"], queryFn: () => fetch("/api/classes").then(r => r.json()) });
+  const { data: classes } = useQuery<ClassItem[]>({
+    queryKey: ["classes"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: () => fetch("/api/classes").then(r => r.json()),
+  });
 
-  const params = new URLSearchParams({ type, mode: "detail", classId: classId === "all" ? "" : classId });
+  const classMap = useMemo(() => {
+    const m = new Map<string, string>();
+    classes?.forEach(c => m.set(c._id, c.name));
+    return m;
+  }, [classes]);
+
+  const params = new URLSearchParams({ type, mode: "detail" });
   if (type === "custom") { params.set("from", customFrom); params.set("to", customTo); }
   if (classId !== "all") params.set("classId", classId);
 
@@ -42,7 +59,6 @@ export default function LaporanPage() {
     staleTime: 60 * 1000,
   });
 
-  // Today summary for quick stats
   const { data: todayData } = useQuery<any>({
     queryKey: ["reports", "today"],
     queryFn: () => fetch("/api/reports?mode=today").then(r => r.json()),
@@ -53,10 +69,10 @@ export default function LaporanPage() {
     if (!data?.details) return;
     const rows: any[] = [];
     data.details.forEach((d: any) => {
-      d.present?.forEach((p: any) => rows.push({ date: d.date, name: p.name, status: "Hadir" }));
-      d.absent?.forEach((a: any) => rows.push({ date: d.date, name: a.name, status: "Tidak Hadir" }));
+      (d.present || []).forEach((p: any) => rows.push({ date: d.date, name: p.name, status: "Hadir" }));
+      (d.absent || []).forEach((a: any) => rows.push({ date: d.date, name: a.name, status: "Tidak Hadir" }));
     });
-    exportToExcel(rows, `laporan-kehadiran-${type}`, `${MS.reports.reportTitle} — ${type}`);
+    exportToExcel(rows, "laporan-kehadiran", `${MS.reports.reportTitle}`);
     toast.success("Eksport Excel berjaya.");
   };
 
@@ -64,10 +80,10 @@ export default function LaporanPage() {
     if (!data) return;
     const rows: any[] = [];
     data.details?.forEach((d: any) => {
-      d.present?.forEach((p: any) => rows.push({ date: d.date, name: p.name, status: "Hadir" }));
-      d.absent?.forEach((a: any) => rows.push({ date: d.date, name: a.name, status: "Tidak Hadir" }));
+      (d.present || []).forEach((p: any) => rows.push({ date: d.date, name: p.name, status: "Hadir" }));
+      (d.absent || []).forEach((a: any) => rows.push({ date: d.date, name: a.name, status: "Tidak Hadir" }));
     });
-    exportToPDF(rows, `laporan-kehadiran-${type}`, MS.reports.reportTitle, type);
+    exportToPDF(rows, "laporan-kehadiran", MS.reports.reportTitle, type);
     toast.success("Eksport PDF berjaya.");
   };
 
@@ -83,6 +99,15 @@ export default function LaporanPage() {
     },
   ];
 
+  const flatRows = useMemo(() => {
+    if (!data?.details) return [];
+    return data.details.reduce((acc: any[], d: any) => [
+      ...acc,
+      ...(d.present || []).map((p: any) => ({ date: d.date, name: p.name, status: "Hadir" })),
+      ...(d.absent || []).map((a: any) => ({ date: d.date, name: a.name, status: "Tidak Hadir" })),
+    ], []);
+  }, [data]);
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <div className="flex items-center justify-between">
@@ -93,13 +118,14 @@ export default function LaporanPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="p-4 flex flex-wrap items-end gap-4">
           <div>
             <Label className="text-xs">{MS.reports.title}</Label>
-            <Select value={type} onValueChange={(v: any) => setType(v)}>
-              <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <Select value={type} onValueChange={(v) => setType(v ?? "daily")}>
+              <SelectTrigger className="w-44">
+                <SelectValue>{REPORT_TYPE_LABELS[type] || type}</SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">{MS.reports.dailyReport}</SelectItem>
                 <SelectItem value="weekly">{MS.reports.weeklyReport}</SelectItem>
@@ -111,8 +137,10 @@ export default function LaporanPage() {
           </div>
           <div>
             <Label className="text-xs">{MS.students.class}</Label>
-            <Select value={classId} onValueChange={(v: any) => setClassId(v)}>
-              <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <Select value={classId} onValueChange={(v) => setClassId(v ?? "all")}>
+              <SelectTrigger className="w-48">
+                <SelectValue>{classId === "all" ? MS.reports.allClasses : (classMap.get(classId) || classId)}</SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{MS.reports.allClasses}</SelectItem>
                 {classes?.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}
@@ -134,7 +162,6 @@ export default function LaporanPage() {
         </CardContent>
       </Card>
 
-      {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card><CardContent className="p-4 text-center"><p className="text-3xl font-bold">{todayData?.totalStudents || 0}</p><p className="text-xs text-muted-foreground">{MS.reports.totalStudents}</p></CardContent></Card>
         <Card><CardContent className="p-4 text-center"><p className="text-3xl font-bold text-green-600">{todayData?.totalHadir || 0}</p><p className="text-xs text-muted-foreground">{MS.status.present}</p></CardContent></Card>
@@ -142,22 +169,10 @@ export default function LaporanPage() {
         <Card><CardContent className="p-4 text-center"><p className="text-3xl font-bold">{todayData?.attendancePercentage || 0}%</p><p className="text-xs text-muted-foreground">{MS.reports.attendancePercentage}</p></CardContent></Card>
       </div>
 
-      {/* Detail table */}
       <Card>
         <CardHeader><CardTitle className="text-base">Rekod Kehadiran</CardTitle></CardHeader>
         <CardContent>
-          {isLoading ? <Skeleton className="h-64" /> : (
-            <DataTable
-              columns={detailColumns}
-              data={data?.details
-                ? data.details.reduce((acc: any[], d: any) => [
-                    ...acc,
-                    ...(d.present || []).map((p: any) => ({ date: d.date, name: p.name, status: "Hadir" })),
-                    ...(d.absent || []).map((a: any) => ({ date: d.date, name: a.name, status: "Tidak Hadir" })),
-                  ], [])
-                : []}
-            />
-          )}
+          {isLoading ? <Skeleton className="h-64" /> : <DataTable columns={detailColumns} data={flatRows} />}
         </CardContent>
       </Card>
     </motion.div>

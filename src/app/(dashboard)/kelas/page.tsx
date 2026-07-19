@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,10 +18,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { MS } from "@/lib/strings/ms";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, GraduationCap, Users } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 
 interface ClassData {
-  _id: string; name: string; guruKelasId: string | null; studentCount: number;
+  _id: string; name: string; guruKelasId: string | null; guruKelasName: string | null; studentCount: number;
 }
 interface Teacher {
   _id: string; fullName: string;
@@ -37,10 +37,18 @@ export default function KelasPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ClassData | null>(null);
 
-  const { data: classes, isLoading } = useQuery<ClassData[]>({ queryKey: ["classes"], queryFn: () => fetch("/api/classes").then(r => r.json()) });
-  const { data: teachers } = useQuery<Teacher[]>({ queryKey: ["users"], queryFn: () => fetch("/api/users").then(r => r.json()), select: (data: any[]) => data.filter(u => u.role === "guru_kelas" && u.isActive) });
+  const { data: classes, isLoading } = useQuery<ClassData[]>({ queryKey: ["classes"], staleTime: 5 * 60 * 1000, queryFn: () => fetch("/api/classes").then(r => r.json()) });
+  const { data: teachers } = useQuery<Teacher[]>({ queryKey: ["users"], queryFn: () => fetch("/api/users").then(r => r.json()), select: (d: any[]) => d.filter(u => u.role === "guru_kelas" && u.isActive), staleTime: 5 * 60 * 1000 });
+
+  const teacherMap = useMemo(() => {
+    const m = new Map<string, string>();
+    teachers?.forEach(t => m.set(t._id, t.fullName));
+    return m;
+  }, [teachers]);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({ resolver: zodResolver(classSchema), defaultValues: { name: "", guruKelasId: "" } });
+
+  const selectedTeacherId = watch("guruKelasId");
 
   const createMutation = useMutation({
     mutationFn: (data: any) => fetch("/api/classes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, guruKelasId: data.guruKelasId || null }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
@@ -67,6 +75,7 @@ export default function KelasPage() {
 
   const columns: ColumnDef<ClassData>[] = [
     { accessorKey: "name", header: MS.classes.name },
+    { accessorKey: "guruKelasName", header: MS.classes.teacher, cell: ({ row }) => row.original.guruKelasName || <span className="text-muted-foreground italic">{MS.classes.noTeacher}</span> },
     { accessorKey: "studentCount", header: MS.classes.studentCount, cell: ({ row }) => <Badge variant="secondary">{row.original.studentCount}</Badge> },
     { id: "actions", header: "", cell: ({ row }) => (
       <div className="flex items-center gap-2 justify-end">
@@ -92,10 +101,14 @@ export default function KelasPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div><Label>{MS.classes.name}</Label><Input {...register("name")} placeholder="cth: 5 Bestari" />{errors.name && <p className="text-xs text-destructive mt-1">{errors.name.message}</p>}</div>
             <div><Label>{MS.classes.teacher}</Label>
-              <Select value={watch("guruKelasId") || "none"} onValueChange={(v) => setValue("guruKelasId", (v ?? "none") === "none" ? "" : (v ?? ""))}>
-                <SelectTrigger><SelectValue placeholder={MS.classes.noTeacher} /></SelectTrigger>
+              <Select value={selectedTeacherId || ""} onValueChange={(v) => setValue("guruKelasId", v ?? "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder={MS.classes.noTeacher}>
+                    {selectedTeacherId ? (teacherMap.get(selectedTeacherId) || selectedTeacherId) : MS.classes.noTeacher}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{MS.classes.noTeacher}</SelectItem>
+                  <SelectItem value="__none__">{MS.classes.noTeacher}</SelectItem>
                   {(teachers as Teacher[] | undefined)?.map((t: Teacher) => <SelectItem key={t._id} value={t._id}>{t.fullName}</SelectItem>)}
                 </SelectContent>
               </Select>

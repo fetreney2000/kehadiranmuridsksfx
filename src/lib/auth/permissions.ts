@@ -106,6 +106,7 @@ export function getNavItems(role: Role | null): NavItem[] {
   }
 
   if (role === "guru_kelas") {
+    items.push({ href: "/kelas-saya", labelKey: "dashboard", icon: "GraduationCap" });
     items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
     items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
   }

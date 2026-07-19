@@ -1,12 +1,7 @@
-/**
- * GET /api/classes — list all classes
- * POST /api/classes — create new class (pentadbir only)
- */
-
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/mongodb";
 import { requireAuth, requireRole } from "@/lib/api/auth-helpers";
-import type { Class } from "@/lib/db/types";
+import type { Class, User } from "@/lib/db/types";
 import { z } from "zod";
 
 const createClassSchema = z.object({
@@ -39,10 +34,23 @@ export async function GET() {
     countMap.set(c._id.toString(), c.count);
   }
 
+  // Get guru kelas names
+  const guruIds = classes.map(c => c.guruKelasId).filter(Boolean);
+  const { ObjectId } = await import("mongodb");
+  const gurus = guruIds.length > 0
+    ? await db.collection<User>("users")
+        .find({ _id: { $in: guruIds.map(id => new ObjectId(id!)) } } as any)
+        .project({ _id: 1, fullName: 1 })
+        .toArray()
+    : [];
+
+  const guruMap = new Map(gurus.map(g => [g._id.toString(), g.fullName]));
+
   const result = classes.map((c) => ({
     _id: c._id.toString(),
     name: c.name,
     guruKelasId: c.guruKelasId?.toString() || null,
+    guruKelasName: c.guruKelasId ? (guruMap.get(c.guruKelasId.toString()) || null) : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
     studentCount: countMap.get(c._id.toString()) || 0,
@@ -65,6 +73,13 @@ export async function POST(request: Request) {
   const db = await getDb();
   const now = new Date();
 
+  let guruKelasName: string | null = null;
+  if (guruKelasId) {
+    const { ObjectId } = await import("mongodb");
+    const guru = await db.collection<User>("users").findOne({ _id: new ObjectId(guruKelasId) } as any);
+    guruKelasName = guru?.fullName || null;
+  }
+
   const result = await db.collection<Class>("classes").insertOne({
     name,
     guruKelasId: guruKelasId || null,
@@ -77,6 +92,7 @@ export async function POST(request: Request) {
       _id: result.insertedId.toString(),
       name,
       guruKelasId: guruKelasId || null,
+      guruKelasName,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
       studentCount: 0,

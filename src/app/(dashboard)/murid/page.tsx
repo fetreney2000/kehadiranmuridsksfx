@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -26,68 +26,50 @@ interface ClassData {
   _id: string; name: string;
 }
 
-const studentSchema = z.object({
-  name: z.string().min(1, MS.validation.required),
-  sex: z.enum(["L", "P"]),
-  classId: z.string().min(1, MS.validation.required),
-});
+const studentSchema = z.object({ name: z.string().min(1, MS.validation.required), sex: z.enum(["L", "P"]), classId: z.string().min(1, MS.validation.required) });
 
 export default function MuridPage() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<StudentData | null>(null);
 
-  const { data: students, isLoading } = useQuery<StudentData[]>({
-    queryKey: ["students"],
-    staleTime: 2 * 60 * 1000,
-    queryFn: () => fetch("/api/students?active=true").then(r => r.json()),
-  });
-  const { data: classes } = useQuery<ClassData[]>({
-    queryKey: ["classes"],
-    staleTime: 5 * 60 * 1000,
-    queryFn: () => fetch("/api/classes").then(r => r.json()),
-  });
+  const { data: students, isLoading } = useQuery<StudentData[]>({ queryKey: ["students"], staleTime: 2 * 60 * 1000, queryFn: () => fetch("/api/students?active=true").then(r => r.json()) });
+  const { data: classes } = useQuery<ClassData[]>({ queryKey: ["classes"], staleTime: 5 * 60 * 1000, queryFn: () => fetch("/api/classes").then(r => r.json()) });
 
-  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
-    resolver: zodResolver(studentSchema), defaultValues: { name: "", sex: "L" as const, classId: "" },
-  });
+  const classMap = useMemo(() => { const m = new Map<string, string>(); classes?.forEach(c => m.set(c._id, c.name)); return m; }, [classes]);
+
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({ resolver: zodResolver(studentSchema), defaultValues: { name: "", sex: "L" as const, classId: "" } });
+
+  const selectedClassId = watch("classId");
 
   const createMutation = useMutation({
     mutationFn: (data: any) => fetch("/api/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["students"] }); toast.success("Murid berjaya ditambah."); setDialogOpen(false); },
     onError: () => toast.error(MS.status.error),
   });
-
   const updateMutation = useMutation({
     mutationFn: ({ id, data: d }: { id: string; data: any }) => fetch(`/api/students/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["students"] }); toast.success("Murid berjaya dikemaskini."); setDialogOpen(false); setEditing(null); },
     onError: () => toast.error(MS.status.error),
   });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => fetch(`/api/students/${id}`, { method: "DELETE" }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["students"] }); toast.success("Murid berjaya dihapus."); },
     onError: () => toast.error(MS.status.error),
   });
 
-  const onSubmit = (data: any) => {
-    if (editing) updateMutation.mutate({ id: editing._id, data });
-    else createMutation.mutate(data);
-  };
+  const onSubmit = (data: any) => { if (editing) updateMutation.mutate({ id: editing._id, data }); else createMutation.mutate(data); };
 
   const columns: ColumnDef<StudentData>[] = [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex] },
-    { accessorKey: "className", header: MS.students.class, cell: ({ row }) => row.original.className || row.original.classId || "—" },
+    { accessorKey: "className", header: MS.students.class, cell: ({ row }) => row.original.className || classMap.get(row.original.classId) || row.original.classId || "—" },
     { accessorKey: "qrCode", header: MS.students.qrCode, cell: ({ row }) => <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{row.original.qrCode.substring(0, 8)}...</code> },
-    {
-      id: "actions", header: "", cell: ({ row }) => (
-        <div className="flex items-center gap-2 justify-end">
-          <Button variant="ghost" size="icon" onClick={() => { setEditing(row.original); reset({ name: row.original.name, sex: row.original.sex, classId: row.original.classId }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
-          <Button variant="ghost" size="icon" onClick={() => { if (confirm(MS.students.deleteConfirm)) deleteMutation.mutate(row.original._id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-        </div>
-      ),
-    },
+    { id: "actions", header: "", cell: ({ row }) => (
+      <div className="flex items-center gap-2 justify-end">
+        <Button variant="ghost" size="icon" onClick={() => { setEditing(row.original); reset({ name: row.original.name, sex: row.original.sex, classId: row.original.classId }); setDialogOpen(true); }}><Pencil className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={() => { if (confirm(MS.students.deleteConfirm)) deleteMutation.mutate(row.original._id); }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+      </div>)},
   ];
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64" /></div>;
@@ -112,8 +94,10 @@ export default function MuridPage() {
               </Select>
             </div>
             <div><Label>{MS.students.class}</Label>
-              <Select value={watch("classId") || ""} onValueChange={(v) => setValue("classId", v ?? "")}>
-                <SelectTrigger><SelectValue placeholder={MS.students.class} /></SelectTrigger>
+              <Select value={selectedClassId || ""} onValueChange={(v) => setValue("classId", v ?? "")}>
+                <SelectTrigger>
+                  <SelectValue placeholder={MS.students.class}>{selectedClassId ? (classMap.get(selectedClassId) || selectedClassId) : null}</SelectValue>
+                </SelectTrigger>
                 <SelectContent>{classes?.map(c => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
               {errors.classId && <p className="text-xs text-destructive mt-1">{errors.classId.message}</p>}
