@@ -1,6 +1,6 @@
 /**
  * Centralised role-based permission helpers.
- * Single source of truth — used by both API routes and UI components.
+ * Dual-role system — checks `roles` array (not just primary role).
  */
 
 import type { Role, SessionPayload } from "@/lib/db/types";
@@ -23,15 +23,17 @@ export const PERMISSIONS = {
 } as const;
 
 //------------------------------------------------------------------------------
-// Helpers
+// Helpers — check ALL roles in the roles array
 //------------------------------------------------------------------------------
 
+/** Check if session has ANY of the given roles */
 export function hasRole(
   session: SessionPayload | null,
   ...roles: Role[]
 ): boolean {
   if (!session) return false;
-  return roles.includes(session.role);
+  const userRoles = session.roles || [session.role]; // fallback for old sessions
+  return roles.some(r => userRoles.includes(r));
 }
 
 export function canManageClass(
@@ -39,8 +41,9 @@ export function canManageClass(
   classId: string | null | undefined
 ): boolean {
   if (!session || !classId) return false;
-  if (session.role === "pentadbir") return true;
-  if (session.role === "guru_kelas") return session.classId === classId;
+  const userRoles = session.roles || [session.role];
+  if (userRoles.includes("pentadbir")) return true;
+  if (userRoles.includes("guru_kelas")) return session.classId === classId;
   return false;
 }
 
@@ -49,69 +52,65 @@ export function canManageStudent(
   studentClassId: string | null | undefined
 ): boolean {
   if (!session) return false;
-  if (session.role === "pentadbir") return true;
-  if (session.role === "guru_kelas" && studentClassId) {
+  const userRoles = session.roles || [session.role];
+  if (userRoles.includes("pentadbir")) return true;
+  if (userRoles.includes("guru_kelas") && studentClassId) {
     return session.classId === studentClassId;
   }
   return false;
 }
 
-/**
- * Returns the class IDs a session is authorised to view.
- * - pentadbir: null means "all classes"
- * - guru_kelas: returns their single classId
- * - guru_biasa: null means "all classes" (they can view all, just not write)
- */
 export function getViewableClassIds(
   session: SessionPayload | null
 ): string[] | null {
   if (!session) return [];
-  if (session.role === "guru_kelas") {
+  const userRoles = session.roles || [session.role];
+  if (userRoles.includes("guru_kelas") && !userRoles.includes("pentadbir")) {
     return session.classId ? [session.classId] : [];
   }
-  // pentadbir and guru_biasa can view all
-  return null;
+  return null; // all classes
 }
 
-/** Get the list of roles the current session can assign to new users */
 export function getAssignableRoles(session: SessionPayload | null): Role[] {
   if (!session) return [];
-  if (session.role === "pentadbir") return ["pentadbir", "guru_kelas", "guru_biasa"];
+  const userRoles = session.roles || [session.role];
+  if (userRoles.includes("pentadbir")) return ["pentadbir", "guru_kelas", "guru_biasa"];
   return [];
 }
 
-/** Navigation items visible to a given role */
+/** Navigation items visible to a given set of roles */
 export interface NavItem {
   href: string;
   labelKey: keyof typeof import("@/lib/strings/ms").MS.nav;
-  icon: string; // lucide icon name
+  icon: string;
 }
 
-export function getNavItems(role: Role | null): NavItem[] {
-  if (!role) return [];
+export function getNavItems(roles: Role[] | null): NavItem[] {
+  if (!roles || roles.length === 0) return [];
   const items: NavItem[] = [];
 
   items.push({ href: "/dashboard", labelKey: "dashboard", icon: "LayoutDashboard" });
   items.push({ href: "/laporan", labelKey: "reports", icon: "FileText" });
 
-  if (role === "pentadbir" || role === "guru_kelas") {
+  const canTakeAttendance =
+    roles.includes("pentadbir") || roles.includes("guru_kelas");
+  if (canTakeAttendance) {
     items.push({ href: "/kehadiran", labelKey: "attendance", icon: "CheckSquare" });
   }
 
-  if (role === "pentadbir") {
+  if (roles.includes("pentadbir")) {
     items.push({ href: "/pengguna", labelKey: "users", icon: "Users" });
     items.push({ href: "/kelas", labelKey: "classes", icon: "GraduationCap" });
     items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
     items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
   }
 
-  if (role === "guru_kelas") {
+  if (roles.includes("guru_kelas") && !roles.includes("pentadbir")) {
     items.push({ href: "/kelas-saya", labelKey: "dashboard", icon: "GraduationCap" });
     items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
     items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
   }
 
   items.push({ href: "/profil", labelKey: "profile", icon: "UserCircle" });
-
   return items;
 }

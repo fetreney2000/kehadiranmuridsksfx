@@ -1,7 +1,3 @@
-/**
- * PATCH /api/users/[id] — update user (pentadbir only)
- */
-
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/mongodb";
 import { requireRole } from "@/lib/api/auth-helpers";
@@ -12,7 +8,7 @@ import { z } from "zod";
 const updateUserSchema = z.object({
   username: z.string().min(3).max(30).optional(),
   fullName: z.string().min(1).optional(),
-  role: z.enum(["pentadbir", "guru_kelas", "guru_biasa"]).optional(),
+  roles: z.array(z.enum(["pentadbir", "guru_kelas", "guru_biasa"])).min(1).optional(),
   classId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(6).optional(),
@@ -33,8 +29,6 @@ export async function PATCH(
   }
 
   const db = await getDb();
-
-  // Prevent changing another admin's username/role — only non-admin users
   const target = await db.collection("users").findOne({ _id: new ObjectId(id) } as any);
   if (!target) {
     return NextResponse.json({ error: "Pengguna tidak dijumpai" }, { status: 404 });
@@ -43,7 +37,6 @@ export async function PATCH(
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
 
   if (parsed.data.username !== undefined) {
-    // Check duplicate username
     const existing = await db.collection("users").findOne({ username: parsed.data.username.toLowerCase().trim(), _id: { $ne: new ObjectId(id) } } as any);
     if (existing) {
       return NextResponse.json({ error: "Nama pengguna telah digunakan." }, { status: 409 });
@@ -51,9 +44,10 @@ export async function PATCH(
     updateData.username = parsed.data.username.toLowerCase().trim();
   }
   if (parsed.data.fullName !== undefined) updateData.fullName = parsed.data.fullName;
-  if (parsed.data.role !== undefined) {
-    updateData.role = parsed.data.role;
-    if (parsed.data.role !== "guru_kelas") {
+  if (parsed.data.roles !== undefined) {
+    updateData.roles = parsed.data.roles;
+    updateData.role = parsed.data.roles[0]; // primary role = first
+    if (!parsed.data.roles.includes("guru_kelas")) {
       updateData.classId = null;
     }
   }

@@ -36,7 +36,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 export function MobileBottomNav({ user }: { user: SafeUser }) {
   const pathname = usePathname();
   const router = useRouter();
-  const navItems = getNavItems(user.role);
+  const roles = user.roles && user.roles.length > 0 ? user.roles : [user.role];
+  const navItems = getNavItems(roles);
 
   const logout = useMutation({
     mutationFn: async () => {
