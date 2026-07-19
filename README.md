@@ -1,36 +1,130 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kehadiran Murid
 
-## Getting Started
+Sistem Pengurusan Kehadiran Murid Sekolah — a Progressive Web App for tracking daily student attendance in Malaysian schools.
 
-First, run the development server:
+## Tech Stack
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 15 (App Router, TypeScript) |
+| UI | shadcn/ui, Tailwind CSS |
+| Tables | TanStack Table v8 |
+| Data Fetching | TanStack Query v5 |
+| Animation | Framer Motion v11 |
+| Database | MongoDB Atlas (Free M0 tier) |
+| Auth | Custom JWT (username/password) |
+| QR Codes | Client-side `qrcode` + `html5-qrcode` |
+| Export | ExcelJS + jsPDF (client-side) |
+| PWA | manifest.json + Next.js |
+
+## Prerequisites
+
+- Node.js 18+
+- MongoDB Atlas (free M0 cluster) — or a local MongoDB instance
+- npm
+
+## Environment Variables
+
+Copy `.env.local.example` to `.env.local` and fill in:
+
+```
+MONGODB_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/kehadiran-murid
+AUTH_SECRET=<random-64-char-string>
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Generate an AUTH_SECRET:
+```bash
+openssl rand -base64 32
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Local Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Install dependencies
+npm install
 
-## Learn More
+# Seed the database with sample data
+npx tsx scripts/seed.ts
 
-To learn more about Next.js, take a look at the following resources:
+# Start development server
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Default Test Accounts
 
-## Deploy on Vercel
+| Peranan | Nama Pengguna | Kata Laluan |
+|---|---|---|
+| Pentadbir | `admin` | `admin123` |
+| Guru Kelas | `guru1` | `guru123` |
+| Guru Kelas | `guru2` | `guru123` |
+| Guru Biasa | `guru3` | `guru123` |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Project Structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/                  # Next.js App Router pages
+    (auth)/login/       # Login page
+    (dashboard)/        # All authenticated pages
+      dashboard/        # Home dashboard
+      kehadiran/        # Attendance (scan + toggle)
+      murid/            # Student management
+      kelas/            # Class management
+      pengguna/         # User management
+      laporan/          # Reports & exports
+      qr/               # QR generation & print
+      profil/           # Change password
+    api/                # REST API routes
+      auth/             # Login / logout / me
+      users/            # User CRUD
+      classes/          # Class CRUD
+      students/         # Student CRUD
+      attendance/       # Attendance marking + query
+      reports/          # Report aggregation
+  components/
+    ui/                 # shadcn/ui components
+    data-table.tsx      # TanStack Table wrapper
+    app-sidebar.tsx     # Sidebar navigation
+    providers.tsx       # QueryClient + Tooltip + Toaster
+  lib/
+    db/                 # MongoDB client + types
+    auth/               # Session + permissions
+    api/                # API route helpers
+    strings/            # Bahasa Melayu strings
+    utils/              # Date/time helpers (KL timezone)
+    export/             # Excel + PDF export utilities
+  middleware.ts          # Auth + role enforcement
+```
+
+## Features
+
+- **Three roles**: Pentadbir, Guru Kelas, Guru Biasa — with strict RBAC
+- **QR attendance**: Generate QR codes per student; scan with device camera
+- **Toggle mode**: Manual attendance marking as fallback
+- **Dashboard**: Today's attendance summary with per-class breakdown
+- **Reports**: Daily/weekly/monthly/yearly/custom range; filterable by class
+- **Excel & PDF export**: Professional reports generated client-side
+- **PWA**: Installable on phones/tablets for classroom use
+- **Bahasa Melayu**: All UI text in Malaysian Malay
+
+## Deployment (Vercel)
+
+1. Push code to GitHub
+2. Import project in Vercel
+3. Add environment variables (`MONGODB_URI`, `AUTH_SECRET`)
+4. Deploy
+5. Run seed script against production DB:
+   ```bash
+   MONGODB_URI=<production-uri> npx tsx scripts/seed.ts
+   ```
+
+## Design Decisions
+
+- **Attendance strategy**: Only write records for students marked *hadir* (present). Absent students = class roster minus those with a hadir record. This minimises writes on the free M0 tier.
+- **Client-side heavy**: QR generation, QR scanning, Excel/PDF export, table sorting/filtering/pagination all happen in the browser — never round-trip to a serverless function.
+- **Bulk writes**: Attendance marking uses MongoDB `bulkWrite` with upserts to efficiently handle batches.
+- **Aggregation pipelines**: Report data is pre-summarised server-side via MongoDB aggregation to minimise data transfer.
+- **TanStack Query caching**: Data cached with 3-minute stale time to reduce serverless function invocations.
