@@ -25,7 +25,17 @@ export async function PATCH(
   }
 
   const db = await getDb();
-  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  const now = new Date();
+
+  // Enforce 1 guru per kelas: if assigning a new guru, remove them from any other class
+  if (parsed.data.guruKelasId) {
+    await db.collection<Class>("classes").updateMany(
+      { guruKelasId: parsed.data.guruKelasId, _id: { $ne: new ObjectId(id) } } as any,
+      { $set: { guruKelasId: null, updatedAt: now } }
+    );
+  }
+
+  const updateData: Record<string, unknown> = { updatedAt: now };
   if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
   if (parsed.data.guruKelasId !== undefined) updateData.guruKelasId = parsed.data.guruKelasId;
 
@@ -46,7 +56,6 @@ export async function DELETE(
   const { id } = await params;
   const db = await getDb();
 
-  // Check if class has students
   const studentCount = await db.collection("students").countDocuments({
     classId: id,
     isActive: true,

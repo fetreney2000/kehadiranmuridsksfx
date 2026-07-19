@@ -20,7 +20,6 @@ export async function GET() {
     .sort({ name: 1 })
     .toArray();
 
-  // Get student counts per class
   const countsAgg = await db
     .collection("students")
     .aggregate([
@@ -34,7 +33,6 @@ export async function GET() {
     countMap.set(c._id.toString(), c.count);
   }
 
-  // Get guru kelas names
   const guruIds = classes.map(c => c.guruKelasId).filter(Boolean);
   const { ObjectId } = await import("mongodb");
   const gurus = guruIds.length > 0
@@ -72,10 +70,18 @@ export async function POST(request: Request) {
   const { name, guruKelasId } = parsed.data;
   const db = await getDb();
   const now = new Date();
+  const { ObjectId } = await import("mongodb");
+
+  // Enforce 1 guru per kelas: if assigning a guru, remove them from any other class
+  if (guruKelasId) {
+    await db.collection<Class>("classes").updateMany(
+      { guruKelasId: guruKelasId } as any,
+      { $set: { guruKelasId: null, updatedAt: now } }
+    );
+  }
 
   let guruKelasName: string | null = null;
   if (guruKelasId) {
-    const { ObjectId } = await import("mongodb");
     const guru = await db.collection<User>("users").findOne({ _id: new ObjectId(guruKelasId) } as any);
     guruKelasName = guru?.fullName || null;
   }
