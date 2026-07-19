@@ -50,14 +50,20 @@ export default function KelasPage() {
 
   const selectedTeacherId = watch("guruKelasId");
 
+  // Convert form value (empty string = no teacher) to API value (null = no teacher)
+  const toApiGuruId = (v: string | undefined | null): string | null => {
+    if (!v || v === "") return null;
+    return v;
+  };
+
   const createMutation = useMutation({
-    mutationFn: (data: any) => fetch("/api/classes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, guruKelasId: data.guruKelasId || null }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
+    mutationFn: (data: any) => fetch("/api/classes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, guruKelasId: toApiGuruId(data.guruKelasId) }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["classes"] }); toast.success("Kelas berjaya ditambah."); setDialogOpen(false); },
     onError: () => toast.error(MS.status.error),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data: d }: { id: string; data: any }) => fetch(`/api/classes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...d, guruKelasId: d.guruKelasId || null }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
+    mutationFn: ({ id, data: d }: { id: string; data: any }) => fetch(`/api/classes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...d, guruKelasId: toApiGuruId(d.guruKelasId) }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["classes"] }); toast.success("Kelas berjaya dikemaskini."); setDialogOpen(false); setEditing(null); },
     onError: () => toast.error(MS.status.error),
   });
@@ -104,11 +110,11 @@ export default function KelasPage() {
               <Select value={selectedTeacherId || ""} onValueChange={(v) => setValue("guruKelasId", v ?? "")}>
                 <SelectTrigger>
                   <SelectValue placeholder={MS.classes.noTeacher}>
-                    {selectedTeacherId && selectedTeacherId !== "__none__" ? (teacherMap.get(selectedTeacherId) || selectedTeacherId) : null}
+                    {selectedTeacherId && selectedTeacherId !== "" ? (teacherMap.get(selectedTeacherId) || selectedTeacherId) : null}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">{MS.classes.noTeacher}</SelectItem>
+                  <SelectItem value="">{MS.classes.noTeacher}</SelectItem>
                   {(teachers as Teacher[] | undefined)?.map((t: Teacher) => <SelectItem key={t._id} value={t._id}>{t.fullName}</SelectItem>)}
                 </SelectContent>
               </Select>
