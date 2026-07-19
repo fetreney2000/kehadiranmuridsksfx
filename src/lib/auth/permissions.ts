@@ -105,10 +105,12 @@ export function getNavItems(roles: Role[] | null): NavItem[] {
     items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
   }
 
-  if (roles.includes("guru_kelas") && !roles.includes("pentadbir")) {
-    items.push({ href: "/kelas-saya", labelKey: "dashboard", icon: "GraduationCap" });
-    items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
-    items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
+  if (roles.includes("guru_kelas")) {
+    items.push({ href: "/kelas-saya", labelKey: "kelasSaya", icon: "GraduationCap" });
+    if (!roles.includes("pentadbir")) {
+      items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
+      items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
+    }
   }
 
   items.push({ href: "/profil", labelKey: "profile", icon: "UserCircle" });

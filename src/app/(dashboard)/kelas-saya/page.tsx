@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,20 +20,14 @@ import { Label } from "@/components/ui/label";
 import { MS } from "@/lib/strings/ms";
 import { getTodayKL, formatDateMalayFull } from "@/lib/utils/date";
 import { toast } from "sonner";
-import {
-  Users, UserCheck, UserX, TrendingUp, AlertCircle,
-  Check, X, QrCode, Camera, CheckCircle, Plus, Loader2, RefreshCw,
-} from "lucide-react";
+import { Check, X, QrCode, Camera, CheckCircle, Plus, Loader2, RefreshCw, AlertCircle } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import type { ColumnDef } from "@tanstack/react-table";
-import { useRouter } from "next/navigation";
 
 interface StudentData { _id: string; name: string; sex: string; classId: string; className: string | null; qrCode: string; }
 
 export default function KelasSayaPage() {
   const queryClient = useQueryClient();
-  const router = useRouter();
-  const [scanMode, setScanMode] = useState(false);
   const [scannedName, setScannedName] = useState("");
   const [scannerRunning, setScannerRunning] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -41,19 +35,20 @@ export default function KelasSayaPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const scannerDivId = "qr-scanner-kelas-saya";
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  // Debounce: prevent same QR from firing multiple times within 2 seconds
+  const lastScanned = useRef<{ id: string; time: number } | null>(null);
 
   const today = getTodayKL();
 
-  // Get current user to find their classId
-  const { data: me } = useQuery<any>({ queryKey: ["me"], queryFn: () => fetch("/api/auth/me").then(r => r.json()) });
+  const { data: me } = useQuery<any>({ queryKey: ["me"], staleTime: 30 * 60 * 1000, queryFn: () => fetch("/api/auth/me").then(r => r.json()) });
   const myClassId = me?.classId;
 
-  // Get my class info
   const { data: myClass } = useQuery<any>({
     queryKey: ["myClass", myClassId],
     queryFn: () => fetch("/api/classes").then(r => r.json()),
-    select: (classes: any[]) => classes.find(c => c._id === myClassId),
+    select: (classes: any[]) => classes.find((c: any) => c._id === myClassId),
     enabled: !!myClassId,
+    staleTime: 10 * 60 * 1000,
   });
 
   const { data: students, isLoading } = useQuery<StudentData[]>({
@@ -74,7 +69,6 @@ export default function KelasSayaPage() {
   useEffect(() => { alreadyMarked.current = new Set(todayAttendance?.map(r => r.studentId) || []); }, [todayAttendance]);
 
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
-  const [unmarkedIds, setUnmarkedIds] = useState<Set<string>>(new Set());
 
   const isPresent = (id: string) => alreadyMarked.current.has(id) || markedIds.has(id);
 
@@ -85,7 +79,6 @@ export default function KelasSayaPage() {
     },
     onSuccess: (_, ids) => {
       setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
-      setUnmarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
       alreadyMarked.current = new Set([...alreadyMarked.current, ...ids]);
       queryClient.invalidateQueries({ queryKey: ["attendance", today] });
       queryClient.invalidateQueries({ queryKey: ["reports", "today"] });
@@ -102,12 +95,26 @@ export default function KelasSayaPage() {
       await scanner.start({ facingMode: "environment" }, { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
         (decodedText) => {
           const student = students?.find(s => s.qrCode === decodedText);
-          if (student) {
-            if (isPresent(student._id)) { setScannedName(`${student.name} — telah ditanda hadir`); navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return; }
-            setScannedName(`${student.name} — ✓ ${MS.status.present}!`); navigator.vibrate?.(100);
-            setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
-            markMutation.mutate([student._id]); setTimeout(() => setScannedName(""), 2500);
+          if (!student) return;
+
+          // Debounce: prevent duplicate scans within 2s for same student
+          const now = Date.now();
+          if (lastScanned.current && lastScanned.current.id === student._id && now - lastScanned.current.time < 2000) {
+            return; // ignore duplicate within 2 seconds
           }
+          lastScanned.current = { id: student._id, time: now };
+
+          if (isPresent(student._id)) {
+            setScannedName(`${student.name} — telah ditanda hadir`);
+            navigator.vibrate?.(200);
+            setTimeout(() => setScannedName(""), 2000);
+            return;
+          }
+          setScannedName(`${student.name} — ✓ ${MS.status.present}!`);
+          navigator.vibrate?.(100);
+          setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
+          markMutation.mutate([student._id]);
+          setTimeout(() => setScannedName(""), 2500);
         }, () => {});
       setScannerRunning(true); setIsStarting(false);
     } catch (err: any) { setIsStarting(false); setScannerRunning(false);
@@ -125,13 +132,10 @@ export default function KelasSayaPage() {
   const toggleMarkAll = () => { const m = students?.filter(s => !isPresent(s._id)) || []; if (m.length === 0) { toast.info("Semua telah ditanda."); return; } markMutation.mutate(m.map(s => s._id)); };
   const toggleUnmarkAll = () => {
     if (!students) return;
-    const all = students;
     setMarkedIds(new Set());
-    setUnmarkedIds(new Set(all.map(s => s._id)));
     toast.info("Semua ditanda tidak hadir.");
   };
 
-  // Add student form
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm({
     resolver: zodResolver(z.object({ name: z.string().min(1), sex: z.enum(["L", "P"]) })),
     defaultValues: { name: "", sex: "L" as const },
@@ -140,7 +144,6 @@ export default function KelasSayaPage() {
   const addStudentMutation = useMutation({
     mutationFn: (data: any) => fetch("/api/students", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, classId: myClassId }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["students"] }); toast.success("Murid berjaya ditambah."); setDialogOpen(false); reset(); },
-    onError: () => toast.error(MS.status.error),
   });
 
   const columns: ColumnDef<StudentData>[] = [
@@ -154,6 +157,7 @@ export default function KelasSayaPage() {
 
   const presentCount = alreadyMarked.current.size + markedIds.size;
   const totalStudents = students?.length || 0;
+  const absentList = students?.filter(s => !isPresent(s._id)) || [];
 
   if (!myClassId) {
     return <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>Anda tidak ditugaskan ke mana-mana kelas. Hubungi pentadbir.</AlertDescription></Alert>;
@@ -179,6 +183,28 @@ export default function KelasSayaPage() {
           <p className="text-sm text-muted-foreground mt-2">{presentCount} / {totalStudents} {MS.status.present.toLowerCase()}</p>
         </CardContent>
       </Card>
+
+      {/* Absent list */}
+      {absentList.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 text-red-500" />
+              Murid Tidak Hadir ({absentList.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              {absentList.map(s => (
+                <div key={s._id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50">
+                  <X className="h-3 w-3 text-red-500 flex-shrink-0" />
+                  <span className="truncate">{s.name}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick scan */}
       <Card>

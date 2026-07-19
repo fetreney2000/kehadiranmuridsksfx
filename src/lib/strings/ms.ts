@@ -31,6 +31,7 @@ export const MS = {
     users: "Pengguna",
     reports: "Laporan",
     qrCodes: "Kod QR",
+    kelasSaya: "Kelas Saya",
     profile: "Profil",
     logout: "Log Keluar",
   },
