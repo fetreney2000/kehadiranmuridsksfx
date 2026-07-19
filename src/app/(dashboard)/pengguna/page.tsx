@@ -49,6 +49,9 @@ export default function PenggunaPage() {
   const selectedRole = watch("role");
   const selectedClassId = watch("classId");
 
+  // Whether to show class picker: pentadbir or guru_kelas
+  const showClassPicker = selectedRole === "guru_kelas" || selectedRole === "pentadbir";
+
   const createMutation = useMutation({
     mutationFn: (data: any) => fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error); }); return r.json(); }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["users"] }); toast.success("Pengguna berjaya ditambah."); setDialogOpen(false); },
@@ -76,8 +79,14 @@ export default function PenggunaPage() {
   const openCreate = () => { setEditingUser(null); reset({ username: "", password: "", fullName: "", role: "guru_biasa", classId: "" }); setDialogOpen(true); };
 
   const onSubmit = (data: any) => {
-    if (editingUser) updateMutation.mutate({ id: editingUser._id, data: { username: data.username, fullName: data.fullName, role: data.role, classId: data.classId || null, ...(data.password ? { password: data.password } : {}) } });
-    else createMutation.mutate(data);
+    if (editingUser) {
+      // Editing: send everything except password (password is handled separately via lock icon)
+      const isGuruKelas = data.role === "guru_kelas";
+      updateMutation.mutate({ id: editingUser._id, data: { username: data.username, fullName: data.fullName, role: data.role, classId: isGuruKelas ? (data.classId || null) : null } });
+    } else {
+      // Creating: send password too
+      createMutation.mutate(data);
+    }
   };
 
   const columns: ColumnDef<SafeUser>[] = [
@@ -108,14 +117,20 @@ export default function PenggunaPage() {
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div><Label>{MS.users.fullName}</Label><Input {...register("fullName")} />{errors.fullName && <p className="text-xs text-destructive mt-1">{errors.fullName.message}</p>}</div>
             <div><Label>{MS.users.username}</Label><Input {...register("username")} />{errors.username && <p className="text-xs text-destructive mt-1">{errors.username.message}</p>}</div>
-            <div><Label>{MS.users.password}</Label><Input type="password" {...register("password")} placeholder={editingUser ? "(Biarkan kosong)" : ""} />{errors.password && <p className="text-xs text-destructive mt-1">{errors.password.message}</p>}</div>
+
+            {/* Password field: only shown for creating new users */}
+            {!editingUser && (
+              <div><Label>{MS.users.password}</Label><Input type="password" {...register("password")} />{errors.password && <p className="text-xs text-destructive mt-1">{errors.password.message}</p>}</div>
+            )}
+
             <div><Label>{MS.users.role}</Label>
-              <Select value={selectedRole} onValueChange={(v) => setValue("role", v as any)}>
+              <Select value={selectedRole} onValueChange={(v) => { setValue("role", v as any); setValue("classId", ""); }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="pentadbir">{MS.role.pentadbir}</SelectItem><SelectItem value="guru_kelas">{MS.role.guru_kelas}</SelectItem><SelectItem value="guru_biasa">{MS.role.guru_biasa}</SelectItem></SelectContent>
               </Select>
             </div>
-            {selectedRole === "guru_kelas" && (
+
+            {showClassPicker && (
               <div><Label>{MS.users.class}</Label>
                 <Select value={selectedClassId || ""} onValueChange={(v) => setValue("classId", v ?? "")}>
                   <SelectTrigger><SelectValue placeholder={MS.classes.noTeacher}>{selectedClassId ? (classMap.get(selectedClassId) || selectedClassId) : MS.classes.noTeacher}</SelectValue></SelectTrigger>
@@ -126,6 +141,7 @@ export default function PenggunaPage() {
                 </Select>
               </div>
             )}
+
             <div className="flex justify-end gap-2"><Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>{MS.actions.cancel}</Button><Button type="submit">{MS.actions.save}</Button></div>
           </form>
         </DialogContent>
@@ -133,6 +149,7 @@ export default function PenggunaPage() {
 
       <Card><CardContent className="p-4"><DataTable columns={columns} data={users || []} /></CardContent></Card>
 
+      {/* Separate password reset dialog */}
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>{MS.users.resetPassword}</DialogTitle></DialogHeader>
