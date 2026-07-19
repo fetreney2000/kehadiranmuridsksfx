@@ -219,8 +219,8 @@ export default function KehadiranPage() {
                   <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{cameraError}</AlertDescription></Alert>
                 )}
 
-                {/* Scanner div — ALWAYS in DOM, hidden when not running */}
-                <div id={scannerDivId} className={scannerRunning ? "w-full max-w-sm mx-auto rounded-lg overflow-hidden" : "hidden"} />
+                {/* Scanner div — always in DOM and visible when in scan mode so camera can render */}
+                <div id={scannerDivId} className="w-full max-w-sm mx-auto rounded-lg overflow-hidden min-h-[200px]" />
 
                 {scannedName && scannerRunning && (
                   <motion.p key={scannedName} initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="text-center font-medium text-green-600">

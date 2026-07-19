@@ -96,13 +96,17 @@ async function getTodaySummary(
     classStudents.get(cid)!.push(s);
   }
 
-  // Get class names
+  // Get class names — must convert string IDs to ObjectId for lookup
+  const { ObjectId } = await import("mongodb");
   const classIds = [...classStudents.keys()];
-  const classDocs = await db
-    .collection("classes")
-    .find({ _id: { $in: classIds.map((id) => id) } } as any)
-    .project({ _id: 1, name: 1 })
-    .toArray();
+  const classDocs =
+    classIds.length > 0
+      ? await db
+          .collection("classes")
+          .find({ _id: { $in: classIds.map((id) => new ObjectId(id)) } } as any)
+          .project({ _id: 1, name: 1 })
+          .toArray()
+      : [];
 
   const classMap = new Map(classDocs.map((c) => [c._id.toString(), c.name]));
 
