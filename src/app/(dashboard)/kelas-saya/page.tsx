@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { DataTable } from "@/components/data-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -151,7 +152,21 @@ export default function KelasSayaPage() {
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
     { id: "status", header: MS.status.active, cell: ({ row }) => {
       const present = isPresent(row.original._id);
-      return <Badge variant={present ? "default" : "secondary"}>{present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}</Badge>;
+      return (
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={present}
+            onCheckedChange={() => {
+              if (!present) markMutation.mutate([row.original._id]);
+              else {
+                setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+              }
+            }}
+            disabled={markMutation.isPending}
+          />
+          <span className="text-xs text-muted-foreground">{present ? MS.status.present : MS.status.absent}</span>
+        </div>
+      );
     }},
   ];
 

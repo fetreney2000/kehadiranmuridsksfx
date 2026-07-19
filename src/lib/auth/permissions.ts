@@ -89,30 +89,38 @@ export function getNavItems(roles: Role[] | null): NavItem[] {
   if (!roles || roles.length === 0) return [];
   const items: NavItem[] = [];
 
+  // 1. Dashboard — always first
   items.push({ href: "/dashboard", labelKey: "dashboard", icon: "LayoutDashboard" });
-  items.push({ href: "/laporan", labelKey: "reports", icon: "FileText" });
 
-  const canTakeAttendance =
-    roles.includes("pentadbir") || roles.includes("guru_kelas");
-  if (canTakeAttendance) {
+  // 2. Kelas Saya — guru_kelas' most-frequented page
+  if (roles.includes("guru_kelas")) {
+    items.push({ href: "/kelas-saya", labelKey: "kelasSaya", icon: "GraduationCap" });
+  }
+
+  // 3. Daftar Kehadiran — core activity for pentadbir + guru_kelas
+  if (roles.includes("pentadbir") || roles.includes("guru_kelas")) {
     items.push({ href: "/kehadiran", labelKey: "attendance", icon: "CheckSquare" });
   }
 
+  // 4-7. Admin management (ordered: kelas → murid → pengguna → kod QR)
   if (roles.includes("pentadbir")) {
-    items.push({ href: "/pengguna", labelKey: "users", icon: "Users" });
     items.push({ href: "/kelas", labelKey: "classes", icon: "GraduationCap" });
+    items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
+    items.push({ href: "/pengguna", labelKey: "users", icon: "Users" });
+    items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
+  }
+
+  // Pure guru_kelas (non-admin): murid + kod QR
+  if (roles.includes("guru_kelas") && !roles.includes("pentadbir")) {
     items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
     items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
   }
 
-  if (roles.includes("guru_kelas")) {
-    items.push({ href: "/kelas-saya", labelKey: "kelasSaya", icon: "GraduationCap" });
-    if (!roles.includes("pentadbir")) {
-      items.push({ href: "/murid", labelKey: "students", icon: "UserRound" });
-      items.push({ href: "/qr", labelKey: "qrCodes", icon: "QrCode" });
-    }
-  }
+  // 8. Laporan — less frequent
+  items.push({ href: "/laporan", labelKey: "reports", icon: "FileText" });
 
+  // 9. Profil — always last
   items.push({ href: "/profil", labelKey: "profile", icon: "UserCircle" });
+
   return items;
 }
