@@ -167,9 +167,7 @@ export default function PenggunaPage() {
                 {ALL_ROLES.map(role => (
                   <label key={role} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox checked={selectedRoles.includes(role)} onCheckedChange={() => toggleRole(role)} disabled={
-                    (selectedRoles.length === 1 && selectedRoles.includes(role)) ||
-                    (role === "guru_biasa" && selectedRoles.includes("guru_kelas")) ||
-                    (role === "guru_kelas" && selectedRoles.includes("guru_biasa"))
+                    (selectedRoles.length === 1 && selectedRoles.includes(role))
                   } />
                     <span className="text-sm">{MS.role[role]}</span>
                   </label>
