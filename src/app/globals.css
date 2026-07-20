@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-inter), "Roboto", system-ui, sans-serif;
+  --font-mono: var(--font-roboto-mono), "Roboto Mono", monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -127,4 +127,48 @@
   html {
     @apply font-sans;
   }
+}
+
+/* Pointer cursor on all interactive elements */
+button:not(:disabled),
+a:not(:disabled),
+[role="button"]:not(:disabled),
+[role="tab"]:not(:disabled),
+[role="menuitem"]:not(:disabled),
+[role="checkbox"]:not(:disabled),
+[role="switch"]:not(:disabled),
+[role="option"]:not(:disabled),
+select:not(:disabled),
+label,
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+summary:not(:disabled),
+.tablerow-clickable,
+.cursor-pointer-custom {
+  cursor: pointer;
+}
+
+/* Keep default cursor on form inputs where typing occurs */
+input[type="text"]:not(:disabled),
+input[type="password"]:not(:disabled),
+input[type="email"]:not(:disabled),
+input[type="search"]:not(:disabled),
+input[type="number"]:not(:disabled),
+input[type="tel"]:not(:disabled),
+input[type="url"]:not(:disabled),
+textarea:not(:disabled) {
+  cursor: text;
+}
+
+/* Disabled state cursor */
+:disabled,
+[disabled],
+[aria-disabled="true"] {
+  cursor: not-allowed !important;
+}
+
+/* Loading state cursor */
+[data-loading="true"],
+.is-loading {
+  cursor: wait !important;
 }
