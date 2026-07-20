@@ -132,7 +132,7 @@ export default function PenggunaPage() {
         );
       },
     },
-    { accessorKey: "isActive", header: MS.status.active, cell: ({ row }) => <Badge variant={row.original.isActive ? "default" : "destructive"}>{row.original.isActive ? MS.status.active : MS.status.inactive}</Badge> },
+    { accessorKey: "isActive", header: MS.status.label, cell: ({ row }) => <Badge variant={row.original.isActive ? "default" : "destructive"}>{row.original.isActive ? MS.status.active : MS.status.inactive}</Badge> },
     { id: "actions", header: "", cell: ({ row }) => (
       <div className="flex items-center gap-2 justify-end">
         <Button variant="ghost" size="icon" onClick={() => openEdit(row.original)}><Pencil className="h-4 w-4" /></Button>

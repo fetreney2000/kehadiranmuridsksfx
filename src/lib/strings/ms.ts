@@ -70,6 +70,7 @@ export const MS = {
 
   // Status
   status: {
+    label: "Status",
     active: "Aktif",
     inactive: "Tidak Aktif",
     present: "Hadir",

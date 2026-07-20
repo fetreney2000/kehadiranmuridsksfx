@@ -160,7 +160,7 @@ export default function KelasSayaPage() {
   const columns: ColumnDef<StudentData>[] = useMemo(() => [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
-    { id: "status", header: MS.status.active, cell: ({ row }) => {
+    { id: "status", header: MS.status.label, cell: ({ row }) => {
       const present = isPresent(row.original._id);
       return <Badge variant={present ? "default" : "secondary"}>{present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}</Badge>;
     }},

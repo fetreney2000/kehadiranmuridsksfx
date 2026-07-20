@@ -121,7 +121,7 @@ export default function LaporanPage() {
       },
     },
     {
-      accessorKey: "status", header: MS.status.active,
+      accessorKey: "status", header: MS.status.label,
       cell: ({ row }) => (
         <Badge variant={row.original.status === "Hadir" ? "default" : "destructive"}>
           {row.original.status}
