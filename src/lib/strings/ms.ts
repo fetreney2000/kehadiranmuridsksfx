@@ -5,14 +5,17 @@
  */
 
 export const MS = {
-  // App
+  // App branding
   appName: "Kehadiran Murid",
   appShortName: "KM",
   appDescription: "Sistem Pengurusan Kehadiran Murid Sekolah",
+  schoolName: "SK SFX Keningau",
+  schoolTagline: "Sekolah Kebangsaan Seri Fx Keningau",
 
   // Login
   login: {
     title: "Log Masuk",
+    subtitle: "Sistem Kehadiran Murid SK SFX Keningau",
     username: "Nama Pengguna",
     password: "Kata Laluan",
     loginButton: "Log Masuk",
@@ -196,6 +199,9 @@ export const MS = {
     printLayout: "Klik Cetak untuk mencetak kod QR murid.",
     studentName: "Murid",
     className: "Kelas",
+    previewTitle: "Kod QR — {name}",
+    exportJPG: "JPG",
+    exportPDF: "PDF",
   },
 
   // Validation

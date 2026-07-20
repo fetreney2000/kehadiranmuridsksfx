@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kehadiran Murid",
-  description: "Sistem Pengurusan Kehadiran Murid Sekolah",
+  title: "Kehadiran Murid — SK SFX Keningau",
+  description: "Sistem Pengurusan Kehadiran Murid Sekolah Kebangsaan Seri Fx Keningau",
   manifest: "/manifest.json",
   icons: {
     icon: "/icons/icon-192.png",
