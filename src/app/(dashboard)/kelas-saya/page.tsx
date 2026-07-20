@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DataTable } from "@/components/data-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -161,19 +161,22 @@ export default function KelasSayaPage() {
     { id: "toggle-attendance", header: "Tindakan", enableSorting: false, cell: ({ row }) => {
       const present = isPresent(row.original._id);
       return (
-        <Switch
-          key={row.original._id}
-          checked={present}
-          onCheckedChange={(v) => {
-            if (v) {
-              setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
-              markMutation.mutate([row.original._id]);
-            } else {
-              setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
-            }
-          }}
-          disabled={markMutation.isPending}
-        />
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <Checkbox
+            key={row.original._id}
+            checked={present}
+            onCheckedChange={(v: boolean | "indeterminate") => {
+              if (v) {
+                setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+                markMutation.mutate([row.original._id]);
+              } else {
+                setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+              }
+            }}
+            disabled={markMutation.isPending}
+          />
+          <span className="text-xs text-muted-foreground">{present ? MS.status.present : MS.status.absent}</span>
+        </label>
       );
     }},
   ], [presentSet, markMutation.isPending]);

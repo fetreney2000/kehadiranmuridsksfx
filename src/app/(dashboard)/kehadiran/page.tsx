@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,7 +22,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 interface StudentItem {
   _id: string; name: string; sex: string; classId: string; className: string | null; qrCode: string;
 }
-
 interface ClassItem {
   _id: string; name: string;
 }
@@ -62,12 +61,11 @@ export default function KehadiranPage() {
     return m;
   }, [classes]);
 
-  // Combine already-marked-from-server + locally-marked into a single state
   const serverMarked = useMemo(() => new Set(todayAttendance?.map(r => r.studentId) || []), [todayAttendance]);
   const presentSet = useMemo(() => {
-    const combined = new Set(serverMarked);
-    markedIds.forEach(id => combined.add(id));
-    return combined;
+    const c = new Set(serverMarked);
+    markedIds.forEach(id => c.add(id));
+    return c;
   }, [serverMarked, markedIds]);
 
   const isPresent = (id: string) => presentSet.has(id);
@@ -94,20 +92,14 @@ export default function KehadiranPage() {
       if (scannerRef.current) { try { await scannerRef.current.stop(); } catch {} scannerRef.current = null; }
       const scanner = new Html5Qrcode(scannerDivId, { verbose: false });
       scannerRef.current = scanner;
-      await scanner.start(
-        { facingMode: "environment" }, { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
+      await scanner.start({ facingMode: "environment" }, { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
         (decodedText) => {
           const student = students?.find(s => s.qrCode === decodedText);
           if (student) {
-            if (isPresent(student._id)) {
-              setScannedName(`${student.name} — telah ditanda hadir`);
-              navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return;
-            }
-            setScannedName(`${student.name} — ✓ ${MS.status.present}!`);
-            navigator.vibrate?.(100);
+            if (isPresent(student._id)) { setScannedName(`${student.name} — telah ditanda hadir`); navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return; }
+            setScannedName(`${student.name} — ✓ ${MS.status.present}!`); navigator.vibrate?.(100);
             setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
-            markMutation.mutate([student._id]);
-            setTimeout(() => setScannedName(""), 2500);
+            markMutation.mutate([student._id]); setTimeout(() => setScannedName(""), 2500);
           }
         }, () => {});
       setScannerRunning(true); setIsStarting(false);
@@ -136,12 +128,10 @@ export default function KehadiranPage() {
 
   const toggleUnmarkAll = () => {
     if (!students) return;
-    const ids = students.map(s => s._id);
-    setMarkedIds(new Set()); // clear all local marks
+    setMarkedIds(new Set());
     toast.info("Semua murid ditanda tidak hadir.");
   };
 
-  // Build toggle columns with stable accessor functions
   const toggleColumns: ColumnDef<StudentItem>[] = useMemo(() => [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
@@ -152,19 +142,22 @@ export default function KehadiranPage() {
     { id: "toggle", header: "", enableSorting: false, cell: ({ row }) => {
       const present = isPresent(row.original._id);
       return (
-        <Switch
-          key={row.original._id}
-          checked={present}
-          onCheckedChange={(v) => {
-            if (v) {
-              setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
-              markMutation.mutate([row.original._id]);
-            } else {
-              setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
-            }
-          }}
-          disabled={markMutation.isPending}
-        />
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <Checkbox
+            key={row.original._id}
+            checked={present}
+            onCheckedChange={(v: boolean | "indeterminate") => {
+              if (v) {
+                setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+                markMutation.mutate([row.original._id]);
+              } else {
+                setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+              }
+            }}
+            disabled={markMutation.isPending}
+          />
+          <span className="text-xs text-muted-foreground">{present ? MS.status.present : MS.status.absent}</span>
+        </label>
       );
     }},
   ], [presentSet, markMutation.isPending]);
