@@ -32,7 +32,6 @@ export default function KehadiranPage() {
   const [mode, setMode] = useState<"scan" | "toggle">("toggle");
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
-  const [unmarkedIds, setUnmarkedIds] = useState<Set<string>>(new Set());
   const [scannerRunning, setScannerRunning] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scannedName, setScannedName] = useState("");
@@ -57,27 +56,32 @@ export default function KehadiranPage() {
     staleTime: 30 * 1000,
   });
 
-  const alreadyMarked = useRef(new Set(todayAttendance?.map(r => r.studentId) || []));
-  useEffect(() => { alreadyMarked.current = new Set(todayAttendance?.map(r => r.studentId) || []); }, [todayAttendance]);
-
-  const isPresent = (id: string) => alreadyMarked.current.has(id) || markedIds.has(id);
-  const isExplicitlyUnmarked = (id: string) => unmarkedIds.has(id);
-
   const classMap = useMemo(() => {
     const m = new Map<string, string>();
     classes?.forEach(c => m.set(c._id, c.name));
     return m;
   }, [classes]);
 
+  // Combine already-marked-from-server + locally-marked into a single state
+  const serverMarked = useMemo(() => new Set(todayAttendance?.map(r => r.studentId) || []), [todayAttendance]);
+  const presentSet = useMemo(() => {
+    const combined = new Set(serverMarked);
+    markedIds.forEach(id => combined.add(id));
+    return combined;
+  }, [serverMarked, markedIds]);
+
+  const isPresent = (id: string) => presentSet.has(id);
+
   const markMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       const items = ids.map(id => ({ studentId: id, classId: selectedClass }));
-      return fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date: today, students: items, method: mode === "scan" ? "qr" : "toggle" }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); });
+      return fetch("/api/attendance", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today, students: items, method: mode === "scan" ? "qr" : "toggle" }),
+      }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); });
     },
     onSuccess: (_, ids) => {
       setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
-      setUnmarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
-      alreadyMarked.current = new Set([...alreadyMarked.current, ...ids]);
       queryClient.invalidateQueries({ queryKey: ["attendance", today] });
       toast.success(`${ids.length} murid ditanda hadir.`);
     },
@@ -90,66 +94,83 @@ export default function KehadiranPage() {
       if (scannerRef.current) { try { await scannerRef.current.stop(); } catch {} scannerRef.current = null; }
       const scanner = new Html5Qrcode(scannerDivId, { verbose: false });
       scannerRef.current = scanner;
-      await scanner.start({ facingMode: "environment" }, { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
+      await scanner.start(
+        { facingMode: "environment" }, { fps: 5, qrbox: { width: 200, height: 200 }, aspectRatio: 1 },
         (decodedText) => {
           const student = students?.find(s => s.qrCode === decodedText);
           if (student) {
-            if (isPresent(student._id)) { setScannedName(`${student.name} — telah ditanda hadir`); navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return; }
-            setScannedName(`${student.name} — ✓ ${MS.status.present}!`); navigator.vibrate?.(100);
+            if (isPresent(student._id)) {
+              setScannedName(`${student.name} — telah ditanda hadir`);
+              navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return;
+            }
+            setScannedName(`${student.name} — ✓ ${MS.status.present}!`);
+            navigator.vibrate?.(100);
             setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
-            setUnmarkedIds(prev => { const n = new Set(prev); n.delete(student._id); return n; });
-            markMutation.mutate([student._id]); setTimeout(() => setScannedName(""), 2500);
+            markMutation.mutate([student._id]);
+            setTimeout(() => setScannedName(""), 2500);
           }
         }, () => {});
       setScannerRunning(true); setIsStarting(false);
-    } catch (err: any) { setIsStarting(false);
-      const msg = err?.message || ""; setScannerRunning(false);
-      if (msg.includes("NotAllowedError") || msg.includes("Permission")) setCameraError("Akses kamera telah ditolak. Sila buka tetapan pelayar anda dan benarkan akses kamera.");
-      else if (msg.includes("NotFoundError")) setCameraError(MS.attendance.cameraUnavailable);
+    } catch (err: any) { setIsStarting(false); setScannerRunning(false);
+      const msg = err?.message || "";
+      if (msg.includes("NotAllowed") || msg.includes("Permission")) setCameraError("Akses kamera telah ditolak.");
+      else if (msg.includes("NotFound")) setCameraError(MS.attendance.cameraUnavailable);
       else setCameraError(msg || "Tidak dapat mengakses kamera.");
     }
-  }, [students, markMutation, selectedClass]);
+  }, [students, markMutation, selectedClass, presentSet]);
 
-  const stopScanner = useCallback(async () => { if (scannerRef.current) { try { await scannerRef.current.stop(); await scannerRef.current.clear(); } catch {} scannerRef.current = null; } setScannerRunning(false); setIsStarting(false); }, []);
+  useEffect(() => { return () => { const s = scannerRef.current; if (s) Promise.resolve(s.stop()).catch(() => {}); }; }, []);
 
-  useEffect(() => { return () => { const s = scannerRef.current; if (s) { Promise.resolve(s.stop()).catch(() => {}); } }; }, []);
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) { try { await scannerRef.current.stop(); await scannerRef.current.clear(); } catch {} scannerRef.current = null; }
+    setScannerRunning(false); setIsStarting(false);
+  }, []);
 
-  const toggleMarkAll = () => { const m = students?.filter(s => !isPresent(s._id)) || []; if (m.length === 0) { toast.info("Semua murid telah ditanda hadir."); return; } markMutation.mutate(m.map(s => s._id)); };
+  const toggleMarkAll = () => {
+    if (!students) return;
+    const ids = students.filter(s => !presentSet.has(s._id)).map(s => s._id);
+    if (ids.length === 0) { toast.info("Semua murid telah ditanda hadir."); return; }
+    setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+    markMutation.mutate(ids);
+  };
 
   const toggleUnmarkAll = () => {
     if (!students) return;
-    const toUnmark = students.filter(s => isPresent(s._id) || isExplicitlyUnmarked(s._id));
-    if (toUnmark.length === 0) { toast.info("Tiada murid yang ditanda hadir."); return; }
-    // Mark as explicitly absent - clear from markedIds
-    setMarkedIds(prev => { const n = new Set(prev); toUnmark.forEach(s => n.delete(s._id)); return n; });
-    setUnmarkedIds(prev => { const n = new Set(prev); toUnmark.forEach(s => n.add(s._id)); return n; });
-    toast.info(`${toUnmark.length} murid ditanda tidak hadir.`);
+    const ids = students.map(s => s._id);
+    setMarkedIds(new Set()); // clear all local marks
+    toast.info("Semua murid ditanda tidak hadir.");
   };
 
-  const toggleColumns: ColumnDef<StudentItem>[] = [
+  // Build toggle columns with stable accessor functions
+  const toggleColumns: ColumnDef<StudentItem>[] = useMemo(() => [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
     { id: "status", header: MS.status.active, cell: ({ row }) => {
       const present = isPresent(row.original._id);
-      const explicitAbsent = isExplicitlyUnmarked(row.original._id);
-      return <Badge variant={present ? "default" : explicitAbsent ? "destructive" : "secondary"}>
-        {present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}
-      </Badge>;
+      return <Badge variant={present ? "default" : "secondary"}>{present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}</Badge>;
     }},
-    { id: "toggle", header: "", cell: ({ row }) => {
+    { id: "toggle", header: "", enableSorting: false, cell: ({ row }) => {
       const present = isPresent(row.original._id);
-      return <Switch checked={present} onCheckedChange={(v) => {
-        if (v) { markMutation.mutate([row.original._id]); }
-        else {
-          setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
-          setUnmarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
-        }
-      }} disabled={markMutation.isPending} />;
+      return (
+        <Switch
+          key={row.original._id}
+          checked={present}
+          onCheckedChange={(v) => {
+            if (v) {
+              setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+              markMutation.mutate([row.original._id]);
+            } else {
+              setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+            }
+          }}
+          disabled={markMutation.isPending}
+        />
+      );
     }},
-  ];
+  ], [presentSet, markMutation.isPending]);
 
   const totalStudents = students?.length || 0;
-  const presentCount = alreadyMarked.current.size + markedIds.size;
+  const presentCount = presentSet.size;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
@@ -158,7 +179,7 @@ export default function KehadiranPage() {
       <Card>
         <CardContent className="p-4">
           <Label>{MS.students.class}</Label>
-          <Select value={selectedClass || ""} onValueChange={(v) => { setSelectedClass(v ?? ""); stopScanner(); setMarkedIds(new Set()); setUnmarkedIds(new Set()); }}>
+          <Select value={selectedClass || ""} onValueChange={(v) => { setSelectedClass(v ?? ""); stopScanner(); setMarkedIds(new Set()); }}>
             <SelectTrigger className="w-64 mt-1">
               <SelectValue placeholder={MS.students.class}>{selectedClass ? (classMap.get(selectedClass) || selectedClass) : null}</SelectValue>
             </SelectTrigger>

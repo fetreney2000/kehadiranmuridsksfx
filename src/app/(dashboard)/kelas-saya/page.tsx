@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,8 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DataTable } from "@/components/data-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,9 @@ export default function KelasSayaPage() {
   const [cameraError, setCameraError] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
   const scannerDivId = "qr-scanner-kelas-saya";
   const scannerRef = useRef<Html5Qrcode | null>(null);
-  // Debounce: prevent same QR from firing multiple times within 2 seconds
   const lastScanned = useRef<{ id: string; time: number } | null>(null);
 
   const today = getTodayKL();
@@ -48,39 +48,40 @@ export default function KelasSayaPage() {
     queryKey: ["myClass", myClassId],
     queryFn: () => fetch("/api/classes").then(r => r.json()),
     select: (classes: any[]) => classes.find((c: any) => c._id === myClassId),
-    enabled: !!myClassId,
-    staleTime: 10 * 60 * 1000,
+    enabled: !!myClassId, staleTime: 10 * 60 * 1000,
   });
 
   const { data: students, isLoading } = useQuery<StudentData[]>({
     queryKey: ["students", myClassId],
     queryFn: () => fetch(`/api/students?classId=${myClassId}&active=true`).then(r => r.json()),
-    enabled: !!myClassId,
-    staleTime: 30 * 1000,
+    enabled: !!myClassId, staleTime: 30 * 1000,
   });
 
   const { data: todayAttendance } = useQuery<any[]>({
     queryKey: ["attendance", today, myClassId],
     queryFn: () => fetch(`/api/attendance?date=${today}&classId=${myClassId}`).then(r => r.json()),
-    enabled: !!myClassId,
-    staleTime: 30 * 1000,
+    enabled: !!myClassId, staleTime: 30 * 1000,
   });
 
-  const alreadyMarked = useRef(new Set(todayAttendance?.map(r => r.studentId) || []));
-  useEffect(() => { alreadyMarked.current = new Set(todayAttendance?.map(r => r.studentId) || []); }, [todayAttendance]);
+  const serverMarked = useMemo(() => new Set(todayAttendance?.map(r => r.studentId) || []), [todayAttendance]);
+  const presentSet = useMemo(() => {
+    const c = new Set(serverMarked);
+    markedIds.forEach(id => c.add(id));
+    return c;
+  }, [serverMarked, markedIds]);
 
-  const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
-
-  const isPresent = (id: string) => alreadyMarked.current.has(id) || markedIds.has(id);
+  const isPresent = (id: string) => presentSet.has(id);
 
   const markMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       const items = ids.map(id => ({ studentId: id, classId: myClassId }));
-      return fetch("/api/attendance", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ date: today, students: items, method: "toggle" }) }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); });
+      return fetch("/api/attendance", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: today, students: items, method: "toggle" }),
+      }).then(r => { if (!r.ok) throw new Error("Gagal"); return r.json(); });
     },
     onSuccess: (_, ids) => {
       setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
-      alreadyMarked.current = new Set([...alreadyMarked.current, ...ids]);
       queryClient.invalidateQueries({ queryKey: ["attendance", today] });
       queryClient.invalidateQueries({ queryKey: ["reports", "today"] });
       toast.success(`${ids.length} murid ditanda hadir.`);
@@ -97,19 +98,12 @@ export default function KelasSayaPage() {
         (decodedText) => {
           const student = students?.find(s => s.qrCode === decodedText);
           if (!student) return;
-
-          // Debounce: prevent duplicate scans within 2s for same student
           const now = Date.now();
-          if (lastScanned.current && lastScanned.current.id === student._id && now - lastScanned.current.time < 2000) {
-            return; // ignore duplicate within 2 seconds
-          }
+          if (lastScanned.current && lastScanned.current.id === student._id && now - lastScanned.current.time < 2000) return;
           lastScanned.current = { id: student._id, time: now };
-
           if (isPresent(student._id)) {
             setScannedName(`${student.name} — telah ditanda hadir`);
-            navigator.vibrate?.(200);
-            setTimeout(() => setScannedName(""), 2000);
-            return;
+            navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return;
           }
           setScannedName(`${student.name} — ✓ ${MS.status.present}!`);
           navigator.vibrate?.(100);
@@ -124,13 +118,23 @@ export default function KelasSayaPage() {
       else if (msg.includes("NotFound")) setCameraError(MS.attendance.cameraUnavailable);
       else setCameraError(msg || "Tidak dapat mengakses kamera.");
     }
-  }, [students, markMutation, myClassId]);
+  }, [students, markMutation, myClassId, presentSet]);
 
-  const stopScanner = useCallback(async () => { if (scannerRef.current) { try { await scannerRef.current.stop(); await scannerRef.current.clear(); } catch {} scannerRef.current = null; } setScannerRunning(false); setIsStarting(false); }, []);
+  const stopScanner = useCallback(async () => {
+    if (scannerRef.current) { try { await scannerRef.current.stop(); await scannerRef.current.clear(); } catch {} scannerRef.current = null; }
+    setScannerRunning(false); setIsStarting(false);
+  }, []);
 
   useEffect(() => { return () => { const s = scannerRef.current; if (s) Promise.resolve(s.stop()).catch(() => {}); }; }, []);
 
-  const toggleMarkAll = () => { const m = students?.filter(s => !isPresent(s._id)) || []; if (m.length === 0) { toast.info("Semua telah ditanda."); return; } markMutation.mutate(m.map(s => s._id)); };
+  const toggleMarkAll = () => {
+    if (!students) return;
+    const ids = students.filter(s => !presentSet.has(s._id)).map(s => s._id);
+    if (ids.length === 0) { toast.info("Semua telah ditanda."); return; }
+    setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+    markMutation.mutate(ids);
+  };
+
   const toggleUnmarkAll = () => {
     if (!students) return;
     setMarkedIds(new Set());
@@ -147,32 +151,36 @@ export default function KelasSayaPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["students"] }); toast.success("Murid berjaya ditambah."); setDialogOpen(false); reset(); },
   });
 
-  const columns: ColumnDef<StudentData>[] = [
+  const columns: ColumnDef<StudentData>[] = useMemo(() => [
     { accessorKey: "name", header: MS.students.name },
     { accessorKey: "sex", header: MS.students.sex, cell: ({ row }) => MS.sex[row.original.sex as "L" | "P"] },
     { id: "status", header: MS.status.active, cell: ({ row }) => {
       const present = isPresent(row.original._id);
+      return <Badge variant={present ? "default" : "secondary"}>{present ? <><Check className="h-3 w-3 mr-1" />{MS.status.present}</> : <><X className="h-3 w-3 mr-1" />{MS.status.absent}</>}</Badge>;
+    }},
+    { id: "toggle-attendance", header: "Tindakan", enableSorting: false, cell: ({ row }) => {
+      const present = isPresent(row.original._id);
       return (
-        <div className="flex items-center gap-2">
-          <Switch
-            checked={present}
-            onCheckedChange={() => {
-              if (!present) markMutation.mutate([row.original._id]);
-              else {
-                setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
-              }
-            }}
-            disabled={markMutation.isPending}
-          />
-          <span className="text-xs text-muted-foreground">{present ? MS.status.present : MS.status.absent}</span>
-        </div>
+        <Switch
+          key={row.original._id}
+          checked={present}
+          onCheckedChange={(v) => {
+            if (v) {
+              setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+              markMutation.mutate([row.original._id]);
+            } else {
+              setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+            }
+          }}
+          disabled={markMutation.isPending}
+        />
       );
     }},
-  ];
+  ], [presentSet, markMutation.isPending]);
 
-  const presentCount = alreadyMarked.current.size + markedIds.size;
+  const presentCount = presentSet.size;
   const totalStudents = students?.length || 0;
-  const absentList = students?.filter(s => !isPresent(s._id)) || [];
+  const absentList = students?.filter(s => !presentSet.has(s._id)) || [];
 
   if (!myClassId) {
     return <Alert><AlertCircle className="h-4 w-4" /><AlertDescription>Anda tidak ditugaskan ke mana-mana kelas. Hubungi pentadbir.</AlertDescription></Alert>;
@@ -185,7 +193,6 @@ export default function KelasSayaPage() {
         <p className="text-muted-foreground text-sm">{myClass?.name || "—"} — {formatDateMalayFull(new Date())}</p>
       </div>
 
-      {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <Card><CardContent className="p-4 text-center"><p className="text-3xl font-bold">{totalStudents}</p><p className="text-xs text-muted-foreground">{MS.reports.totalStudents}</p></CardContent></Card>
         <Card><CardContent className="p-4 text-center"><p className="text-3xl font-bold text-green-600">{presentCount}</p><p className="text-xs text-muted-foreground">{MS.status.present}</p></CardContent></Card>
@@ -199,7 +206,6 @@ export default function KelasSayaPage() {
         </CardContent>
       </Card>
 
-      {/* Absent list */}
       {absentList.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -221,14 +227,9 @@ export default function KelasSayaPage() {
         </Card>
       )}
 
-      {/* Quick scan */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader>
           <CardTitle className="text-base"><QrCode className="h-4 w-4 inline mr-2" />Imbasan Pantas</CardTitle>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={toggleMarkAll} disabled={markMutation.isPending}><CheckCircle className="h-4 w-4 mr-1" />Semua Hadir</Button>
-            <Button variant="outline" size="sm" onClick={toggleUnmarkAll}><X className="h-4 w-4 mr-1" />Semua Tidak Hadir</Button>
-          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {cameraError && <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{cameraError}</AlertDescription></Alert>}
@@ -242,11 +243,14 @@ export default function KelasSayaPage() {
         </CardContent>
       </Card>
 
-      {/* Student list */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-base">Senarai Murid</CardTitle>
-          <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />{MS.students.addStudent}</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={toggleMarkAll} disabled={markMutation.isPending}><CheckCircle className="h-4 w-4 mr-1" />Semua Hadir</Button>
+            <Button variant="outline" size="sm" onClick={toggleUnmarkAll}><X className="h-4 w-4 mr-1" />Semua Tidak Hadir</Button>
+            <Button onClick={() => setDialogOpen(true)}><Plus className="h-4 w-4 mr-2" />{MS.students.addStudent}</Button>
+          </div>
         </CardHeader>
         <CardContent>{isLoading ? <Skeleton className="h-64" /> : <DataTable columns={columns} data={students || []} />}</CardContent>
       </Card>
