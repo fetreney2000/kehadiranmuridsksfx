@@ -31,6 +31,7 @@ export default function KehadiranPage() {
   const [mode, setMode] = useState<"scan" | "toggle">("toggle");
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const [scannerRunning, setScannerRunning] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scannedName, setScannedName] = useState("");
@@ -44,15 +45,13 @@ export default function KehadiranPage() {
   const { data: students, isLoading } = useQuery<StudentItem[]>({
     queryKey: ["students", selectedClass],
     queryFn: () => fetch(`/api/students?classId=${selectedClass}&active=true`).then(r => r.json()),
-    enabled: !!selectedClass,
-    staleTime: 30 * 1000,
+    enabled: !!selectedClass, staleTime: 30 * 1000,
   });
 
   const { data: todayAttendance } = useQuery<any[]>({
     queryKey: ["attendance", today, selectedClass],
     queryFn: () => fetch(`/api/attendance?date=${today}&classId=${selectedClass}`).then(r => r.json()),
-    enabled: !!selectedClass,
-    staleTime: 30 * 1000,
+    enabled: !!selectedClass, staleTime: 30 * 1000,
   });
 
   const classMap = useMemo(() => {
@@ -61,12 +60,14 @@ export default function KehadiranPage() {
     return m;
   }, [classes]);
 
+  // Combine server data + local marks — with removal tracking
   const serverMarked = useMemo(() => new Set(todayAttendance?.map(r => r.studentId) || []), [todayAttendance]);
   const presentSet = useMemo(() => {
     const c = new Set(serverMarked);
     markedIds.forEach(id => c.add(id));
+    removedIds.forEach(id => c.delete(id));
     return c;
-  }, [serverMarked, markedIds]);
+  }, [serverMarked, markedIds, removedIds]);
 
   const isPresent = (id: string) => presentSet.has(id);
 
@@ -80,6 +81,7 @@ export default function KehadiranPage() {
     },
     onSuccess: (_, ids) => {
       setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+      setRemovedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
       queryClient.invalidateQueries({ queryKey: ["attendance", today] });
       toast.success(`${ids.length} murid ditanda hadir.`);
     },
@@ -99,6 +101,7 @@ export default function KehadiranPage() {
             if (isPresent(student._id)) { setScannedName(`${student.name} — telah ditanda hadir`); navigator.vibrate?.(200); setTimeout(() => setScannedName(""), 2000); return; }
             setScannedName(`${student.name} — ✓ ${MS.status.present}!`); navigator.vibrate?.(100);
             setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
+            setRemovedIds(prev => { const n = new Set(prev); n.delete(student._id); return n; });
             markMutation.mutate([student._id]); setTimeout(() => setScannedName(""), 2500);
           }
         }, () => {});
@@ -123,12 +126,14 @@ export default function KehadiranPage() {
     const ids = students.filter(s => !presentSet.has(s._id)).map(s => s._id);
     if (ids.length === 0) { toast.info("Semua murid telah ditanda hadir."); return; }
     setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+    setRemovedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
     markMutation.mutate(ids);
   };
 
   const toggleUnmarkAll = () => {
     if (!students) return;
     setMarkedIds(new Set());
+    setRemovedIds(new Set(students.map(s => s._id)));
     toast.info("Semua murid ditanda tidak hadir.");
   };
 
@@ -149,9 +154,11 @@ export default function KehadiranPage() {
             onCheckedChange={(v: boolean | "indeterminate") => {
               if (v) {
                 setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+                setRemovedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
                 markMutation.mutate([row.original._id]);
               } else {
                 setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+                setRemovedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
               }
             }}
             disabled={markMutation.isPending}
@@ -172,7 +179,7 @@ export default function KehadiranPage() {
       <Card>
         <CardContent className="p-4">
           <Label>{MS.students.class}</Label>
-          <Select value={selectedClass || ""} onValueChange={(v) => { setSelectedClass(v ?? ""); stopScanner(); setMarkedIds(new Set()); }}>
+          <Select value={selectedClass || ""} onValueChange={(v) => { setSelectedClass(v ?? ""); stopScanner(); setMarkedIds(new Set()); setRemovedIds(new Set()); }}>
             <SelectTrigger className="w-64 mt-1">
               <SelectValue placeholder={MS.students.class}>{selectedClass ? (classMap.get(selectedClass) || selectedClass) : null}</SelectValue>
             </SelectTrigger>

@@ -35,6 +35,7 @@ export default function KelasSayaPage() {
   const [isStarting, setIsStarting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [markedIds, setMarkedIds] = useState<Set<string>>(new Set());
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
   const scannerDivId = "qr-scanner-kelas-saya";
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanned = useRef<{ id: string; time: number } | null>(null);
@@ -67,8 +68,9 @@ export default function KelasSayaPage() {
   const presentSet = useMemo(() => {
     const c = new Set(serverMarked);
     markedIds.forEach(id => c.add(id));
+    removedIds.forEach(id => c.delete(id));
     return c;
-  }, [serverMarked, markedIds]);
+  }, [serverMarked, markedIds, removedIds]);
 
   const isPresent = (id: string) => presentSet.has(id);
 
@@ -82,6 +84,7 @@ export default function KelasSayaPage() {
     },
     onSuccess: (_, ids) => {
       setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+      setRemovedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
       queryClient.invalidateQueries({ queryKey: ["attendance", today] });
       queryClient.invalidateQueries({ queryKey: ["reports", "today"] });
       toast.success(`${ids.length} murid ditanda hadir.`);
@@ -108,6 +111,7 @@ export default function KelasSayaPage() {
           setScannedName(`${student.name} — ✓ ${MS.status.present}!`);
           navigator.vibrate?.(100);
           setMarkedIds(prev => { const n = new Set(prev); n.add(student._id); return n; });
+          setRemovedIds(prev => { const n = new Set(prev); n.delete(student._id); return n; });
           markMutation.mutate([student._id]);
           setTimeout(() => setScannedName(""), 2500);
         }, () => {});
@@ -132,12 +136,14 @@ export default function KelasSayaPage() {
     const ids = students.filter(s => !presentSet.has(s._id)).map(s => s._id);
     if (ids.length === 0) { toast.info("Semua telah ditanda."); return; }
     setMarkedIds(prev => { const n = new Set(prev); ids.forEach(id => n.add(id)); return n; });
+    setRemovedIds(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n; });
     markMutation.mutate(ids);
   };
 
   const toggleUnmarkAll = () => {
     if (!students) return;
     setMarkedIds(new Set());
+    setRemovedIds(new Set(students.map(s => s._id)));
     toast.info("Semua ditanda tidak hadir.");
   };
 
@@ -168,9 +174,11 @@ export default function KelasSayaPage() {
             onCheckedChange={(v: boolean | "indeterminate") => {
               if (v) {
                 setMarkedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
+                setRemovedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
                 markMutation.mutate([row.original._id]);
               } else {
                 setMarkedIds(prev => { const n = new Set(prev); n.delete(row.original._id); return n; });
+                setRemovedIds(prev => { const n = new Set(prev); n.add(row.original._id); return n; });
               }
             }}
             disabled={markMutation.isPending}
