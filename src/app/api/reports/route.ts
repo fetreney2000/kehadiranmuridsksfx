@@ -2,14 +2,16 @@
  * GET /api/reports — attendance reports with aggregation
  *
  * Query params:
- *  - mode: today | detail | summary | class-detail
- *  - classId: for class-detail mode
+ *  - mode: today | detail | summary | class-detail | summary-sex
+ *  - type: daily | weekly | monthly | yearly | custom
+ *  - classId: optional
+ *  - from, to: for custom range
  */
 
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/mongodb";
 import { requireAuth } from "@/lib/api/auth-helpers";
-import type { Student, Attendance } from "@/lib/db/types";
+import type { Student } from "@/lib/db/types";
 import { getTodayKL, getDateRange } from "@/lib/utils/date";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +51,11 @@ export async function GET(request: Request) {
     return getTodaySummary(db, students, today, effectiveClassId);
   }
 
+  if (mode === "summary-sex") {
+    // Sex-based summary for any date range
+    return getSummarySex(db, range, effectiveClassId, students);
+  }
+
   if (mode === "detail") {
     const studentMap = new Map(students.map((s) => [s._id.toString(), s]));
     return getDetailedReport(db, range, effectiveClassId, students, studentMap);
@@ -69,7 +76,6 @@ async function getTodaySummary(db: any, students: any[], today: string, classId:
 
   const presentSet = new Set(attendanceRecords.map((a: any) => a.studentId.toString()));
 
-  // Group by class
   const classStudents = new Map<string, any[]>();
   for (const s of students) {
     const cid = s.classId?.toString() || "unknown";
@@ -77,7 +83,6 @@ async function getTodaySummary(db: any, students: any[], today: string, classId:
     classStudents.get(cid)!.push(s);
   }
 
-  // Get class names
   const { ObjectId } = await import("mongodb");
   const classIds = [...classStudents.keys()];
   const classDocs = classIds.length > 0
@@ -142,16 +147,114 @@ async function getTodaySummary(db: any, students: any[], today: string, classId:
   });
 }
 
-async function getClassDetail(db: any, students: any[], today: string, classId: string) {
-  // Filter to only the requested class
-  const classStudents = students.filter(s => s.classId?.toString() === classId);
+async function getSummarySex(db: any, range: { from: string; to: string }, classId: string | null, students: any[]) {
+  // Count total students by sex
+  let totalL = 0, totalP = 0;
+  for (const s of students) {
+    if (s.sex === "L") totalL++;
+    else totalP++;
+  }
 
-  // Get class name
+  // Count attendance in the date range — use aggregation for efficiency
+  const matchStage: Record<string, unknown> = { date: { $gte: range.from, $lte: range.to } };
+  if (classId) matchStage.classId = classId;
+
+  // Get unique student IDs that have attendance records in this range
+  const attRecords = await db.collection("attendance")
+    .aggregate([
+      { $match: matchStage },
+      { $group: { _id: "$studentId" } },
+    ])
+    .toArray();
+
+  // Also get per-date attendance for the report
+  const dailyAgg = await db.collection("attendance")
+    .aggregate([
+      { $match: matchStage },
+      { $group: { _id: "$date", count: { $sum: 1 } } },
+      { $sort: { _id: 1 } },
+    ])
+    .toArray();
+
+  const uniquePresentIds = new Set(attRecords.map((a: any) => a._id.toString()));
+  const totalHadir = uniquePresentIds.size;
+  const totalStudents = students.length;
+
+  // Count hadir by sex among all students
+  let hadirL = 0, hadirP = 0;
+  for (const s of students) {
+    if (uniquePresentIds.has(s._id.toString())) {
+      if (s.sex === "L") hadirL++;
+      else hadirP++;
+    }
+  }
+
+  // Per-class breakdown for this date range
+  const classStudents = new Map<string, any[]>();
+  for (const s of students) {
+    const cid = s.classId?.toString() || "unknown";
+    if (!classStudents.has(cid)) classStudents.set(cid, []);
+    classStudents.get(cid)!.push(s);
+  }
+
+  const { ObjectId } = await import("mongodb");
+  const classIds = [...classStudents.keys()];
+  const classDocs = classIds.length > 0
+    ? await db.collection("classes")
+        .find({ _id: { $in: classIds.map((id: string) => new ObjectId(id)) } } as any)
+        .project({ _id: 1, name: 1 })
+        .toArray()
+    : [];
+  const classMap = new Map(classDocs.map((c: any) => [c._id.toString(), c.name]));
+
+  const perClass: any[] = [];
+  for (const [cid, stuList] of classStudents) {
+    let hadir = 0, hadirL = 0, hadirP = 0;
+    let countL = 0, countP = 0;
+    for (const s of stuList) {
+      const isPresent = uniquePresentIds.has(s._id.toString());
+      if (s.sex === "L") countL++;
+      else countP++;
+      if (isPresent) {
+        hadir++;
+        if (s.sex === "L") hadirL++; else hadirP++;
+      }
+    }
+    const total = stuList.length;
+    perClass.push({
+      classId: cid,
+      className: classMap.get(cid) || cid,
+      total, hadir, tidakHadir: total - hadir,
+      percentage: total > 0 ? Math.round((hadir / total) * 100) : 0,
+      totalL: countL, hadirL, tidakHadirL: countL - hadirL, percentageL: countL > 0 ? Math.round((hadirL / countL) * 100) : 0,
+      totalP: countP, hadirP, tidakHadirP: countP - hadirP, percentageP: countP > 0 ? Math.round((hadirP / countP) * 100) : 0,
+    });
+  }
+
+  return NextResponse.json({
+    range,
+    totalStudents, totalHadir, totalTidakHadir: totalStudents - totalHadir,
+    attendancePercentage: totalStudents > 0 ? Math.round((totalHadir / totalStudents) * 100) : 0,
+    totalL, totalHadirL: hadirL, tidakHadirL: totalL - hadirL,
+    percentageL: totalL > 0 ? Math.round((hadirL / totalL) * 100) : 0,
+    totalP, totalHadirP: hadirP, tidakHadirP: totalP - hadirP,
+    percentageP: totalP > 0 ? Math.round((hadirP / totalP) * 100) : 0,
+    perClass,
+    days: dailyAgg.map((d: any) => ({
+      date: d._id, hadir: d.count,
+      tidakHadir: Math.max(0, students.length - d.count),
+      percentage: students.length > 0 ? Math.round((d.count / students.length) * 100) : 0,
+    })),
+    totalRecords: dailyAgg.reduce((sum: number, d: any) => sum + d.count, 0),
+  });
+}
+
+async function getClassDetail(db: any, students: any[], today: string, classId: string) {
+  const classStudents = students.filter(s => s.classId?.toString() === classId);
   const { ObjectId } = await import("mongodb");
   const classDoc = await db.collection("classes").findOne({ _id: new ObjectId(classId) } as any);
   const className = classDoc?.name || classId;
 
-  // Get today's attendance for this class
   const attFilter = { date: today, classId };
   const attendanceRecords = await db.collection("attendance").find(attFilter).project({ studentId: 1 }).toArray();
   const presentSet = new Set(attendanceRecords.map((a: any) => a.studentId.toString()));
@@ -175,22 +278,16 @@ async function getClassDetail(db: any, students: any[], today: string, classId: 
 
   const total = classStudents.length;
   return NextResponse.json({
-    classId, className,
-    date: today,
-    total, hadir, tidakHadir: total - hadir,
-    percentage: total > 0 ? Math.round((hadir / total) * 100) : 0,
-    totalL: countL, hadirL, tidakHadirL: countL - hadirL,
-    percentageL: countL > 0 ? Math.round((hadirL / countL) * 100) : 0,
-    totalP: countP, hadirP, tidakHadirP: countP - hadirP,
-    percentageP: countP > 0 ? Math.round((hadirP / countP) * 100) : 0,
+    classId, className, date: today,
+    total, hadir, tidakHadir: total - hadir, percentage: total > 0 ? Math.round((hadir / total) * 100) : 0,
+    totalL: countL, hadirL, tidakHadirL: countL - hadirL, percentageL: countL > 0 ? Math.round((hadirL / countL) * 100) : 0,
+    totalP: countP, hadirP, tidakHadirP: countP - hadirP, percentageP: countP > 0 ? Math.round((hadirP / countP) * 100) : 0,
     absentList,
   });
 }
 
 async function getSummaryReport(db: any, range: any, classId: string | null, students: any[]) {
-  const matchStage: Record<string, unknown> = {
-    date: { $gte: range.from, $lte: range.to },
-  };
+  const matchStage: Record<string, unknown> = { date: { $gte: range.from, $lte: range.to } };
   if (classId) matchStage.classId = classId;
 
   const agg = await db.collection("attendance")
@@ -224,8 +321,9 @@ async function getDetailedReport(db: any, range: any, classId: string | null, st
     const present: any[] = [];
     const absent: any[] = [];
     for (const s of students) {
-      if (presentSet.has(s._id.toString())) present.push({ _id: s._id.toString(), name: s.name });
-      else absent.push({ _id: s._id.toString(), name: s.name });
+      const entry = { _id: s._id.toString(), name: s.name, sex: s.sex };
+      if (presentSet.has(s._id.toString())) present.push(entry);
+      else absent.push(entry);
     }
     details.push({ date, present, absent, total: students.length });
   }
