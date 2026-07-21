@@ -8,7 +8,7 @@ const secret = new TextEncoder().encode(AUTH_SECRET);
 const COOKIE_NAME = "km-token";
 
 const PUBLIC_PATHS = ["/login"];
-const BYPASS_PREFIXES = ["/_next", "/favicon.ico", "/icons", "/manifest.json", "/sw.js", "/api/auth"];
+const BYPASS_PREFIXES = ["/_next", "/favicon.ico", "/icons", "/manifest.json", "/sw.js", "/api/auth", "/api/v1"];
 
 async function getSessionFromRequest(request: NextRequest): Promise<SessionPayload | null> {
   try {
