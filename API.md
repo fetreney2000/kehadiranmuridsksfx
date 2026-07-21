@@ -38,6 +38,7 @@ List attendance records with filtering and pagination.
 | `date` | string (YYYY-MM-DD) | — | Exact date filter |
 | `from` | string (YYYY-MM-DD) | — | Range start (requires `to`) |
 | `to` | string (YYYY-MM-DD) | — | Range end (requires `from`) |
+| `includeAbsent` | boolean | `false` | When `true`, returns both present and absent students per date. Absence is computed as class roster minus present records. Requires `date` or `from`/`to`. |
 | `page` | integer | 1 | Page number (1-indexed) |
 | `limit` | integer | 100 | Items per page (max 1000) |
 
@@ -107,7 +108,7 @@ Today's attendance summary, grouped by class. Computed in Asia/Kuala_Lumpur time
 }
 ```
 
-> **Attendance strategy:** Only "hadir" records are stored. Absent students = class roster minus students with a "hadir" record for the date. This means the attendance collection only contains present records, and absence is computed by set difference.
+> **Attendance strategy:** Only "hadir" records are stored. Absent students = class roster minus students with a "hadir" record for the date. This means the attendance collection only contains present records, and absence is computed by set difference. Use `includeAbsent=true` to get both present and absent students in one response.
 
 ---
 
