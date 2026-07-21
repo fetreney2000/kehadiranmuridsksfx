@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
   const result = students.map((s) => ({
     id: s._id.toString(),
-    name: s.name,
+    studentName: s.name,
     sex: s.sex,
     classId: s.classId?.toString() || null,
     className: classMap.get(s.classId?.toString() || "") || null,

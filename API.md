@@ -172,7 +172,7 @@ List students with pagination.
   "data": [
     {
       "id": "664a1b2c3d4e5f6a7b8c9d0a",
-      "name": "Ahmad bin Ali",
+      "studentName": "Ahmad bin Ali",
       "sex": "L",
       "classId": "663a1b2c3d4e5f6a7b8c9d0b",
       "className": "4 Dinamik",
