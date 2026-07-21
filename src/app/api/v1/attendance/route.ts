@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db/mongodb";
 import { requireApiKey } from "@/lib/api/api-key-auth";
 import { addCorsHeaders, handleOptions } from "@/lib/api/cors";
-import type { Attendance } from "@/lib/db/types";
+import type { Attendance, Student, Class } from "@/lib/db/types";
 
 export const dynamic = "force-dynamic";
 
@@ -44,10 +44,36 @@ export async function GET(request: Request) {
     .limit(limit)
     .toArray();
 
+  // Resolve student names and class names in batch
+  const studentIds = [...new Set(records.map((r) => r.studentId))];
+  const classIds = [...new Set(records.map((r) => r.classId))];
+
+  const [studentDocs, classDocs] = await Promise.all([
+    studentIds.length > 0
+      ? db
+          .collection<Student>("students")
+          .find({ _id: { $in: studentIds } } as any)
+          .project({ _id: 1, name: 1 })
+          .toArray()
+      : [],
+    classIds.length > 0
+      ? db
+          .collection<Class>("classes")
+          .find({ _id: { $in: classIds } } as any)
+          .project({ _id: 1, name: 1 })
+          .toArray()
+      : [],
+  ]);
+
+  const studentNameMap = new Map(studentDocs.map((s) => [s._id.toString(), s.name]));
+  const classNameMap = new Map(classDocs.map((c) => [c._id.toString(), c.name]));
+
   const result = records.map((r) => ({
     id: r._id.toString(),
     studentId: r.studentId,
+    studentName: studentNameMap.get(r.studentId) || null,
     classId: r.classId,
+    className: classNameMap.get(r.classId) || null,
     date: r.date,
     status: r.status,
     method: r.method,

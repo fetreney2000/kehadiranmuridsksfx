@@ -48,7 +48,9 @@ List attendance records with filtering and pagination.
     {
       "id": "665a1b2c3d4e5f6a7b8c9d0e",
       "studentId": "664a1b2c3d4e5f6a7b8c9d0a",
+      "studentName": "Ahmad bin Ali",
       "classId": "663a1b2c3d4e5f6a7b8c9d0b",
+      "className": "4 Dinamik",
       "date": "2026-07-21",
       "status": "hadir",
       "method": "qr",
